@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2019 the V8 project authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -19,7 +19,9 @@ out = """
 #include "src/common/ptr-compr-inl.h"
 #include "tools/debug_helper/debug-helper-internal.h"
 
-namespace v8_debug_helper_internal {
+namespace v8 {
+namespace internal {
+namespace debug_helper_internal {
 """
 
 def iterate_objects(target_space, camel_space_name):
@@ -29,7 +31,7 @@ def iterate_objects(target_space, camel_space_name):
     if space == target_space:
       result.append((offset, name))
   for (space, offset), name in v8heapconst.KNOWN_OBJECTS.items():
-    if space == target_space:
+    if space == target_space and (space, offset) not in v8heapconst.KNOWN_MAPS:
       result.append((offset, name))
   out = out + '\nstd::string FindKnownObjectIn' + camel_space_name \
       + '(uintptr_t offset) {\n  switch (offset) {\n'
@@ -38,8 +40,9 @@ def iterate_objects(target_space, camel_space_name):
   out = out + '    default: return "";\n  }\n}\n'
 
 iterate_objects('map_space', 'MapSpace')
-iterate_objects('read_only_space', 'ReadOnlySpace')
 iterate_objects('old_space', 'OldSpace')
+iterate_objects('read_only_space', 'ReadOnlySpace')
+
 
 def iterate_maps(target_space, camel_space_name):
   global out
@@ -52,6 +55,7 @@ def iterate_maps(target_space, camel_space_name):
   out = out + '    default: return -1;\n  }\n}\n'
 
 iterate_maps('map_space', 'MapSpace')
+iterate_maps('old_space', 'OldSpace')
 iterate_maps('read_only_space', 'ReadOnlySpace')
 
 out = out + '\nvoid FillInUnknownHeapAddresses(' + \
@@ -70,7 +74,7 @@ if (hasattr(v8heapconst, 'HEAP_FIRST_PAGES')):  # Only exists in ptr-compr build
       out = out + '  }\n'
 out = out + '}\n'
 
-out = out + '\n}\n'
+out = out + '\n}\n}\n}\n'
 
 try:
   with open(sys.argv[2], "r") as out_file:

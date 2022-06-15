@@ -22,7 +22,8 @@
 #include "async_wrap-inl.h"
 #include "env-inl.h"
 #include "handle_wrap.h"
-#include "node_process.h"
+#include "node_external_reference.h"
+#include "node_process-inl.h"
 #include "util-inl.h"
 #include "v8.h"
 
@@ -35,7 +36,6 @@ using v8::HandleScope;
 using v8::Integer;
 using v8::Local;
 using v8::Object;
-using v8::String;
 using v8::Value;
 
 void DecreaseSignalHandlerCount(int signum);
@@ -53,18 +53,20 @@ class SignalWrap : public HandleWrap {
                          void* priv) {
     Environment* env = Environment::GetCurrent(context);
     Local<FunctionTemplate> constructor = env->NewFunctionTemplate(New);
-    constructor->InstanceTemplate()->SetInternalFieldCount(1);
-    Local<String> signalString =
-        FIXED_ONE_BYTE_STRING(env->isolate(), "Signal");
-    constructor->SetClassName(signalString);
+    constructor->InstanceTemplate()->SetInternalFieldCount(
+        SignalWrap::kInternalFieldCount);
     constructor->Inherit(HandleWrap::GetConstructorTemplate(env));
 
     env->SetProtoMethod(constructor, "start", Start);
     env->SetProtoMethod(constructor, "stop", Stop);
 
-    target->Set(env->context(), signalString,
-                constructor->GetFunction(env->context()).ToLocalChecked())
-                .Check();
+    env->SetConstructorFunction(target, "Signal", constructor);
+  }
+
+  static void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+    registry->Register(New);
+    registry->Register(Start);
+    registry->Register(Stop);
   }
 
   SET_NO_MEMORY_INFO()
@@ -158,7 +160,7 @@ class SignalWrap : public HandleWrap {
 
 void DecreaseSignalHandlerCount(int signum) {
   Mutex::ScopedLock lock(handled_signals_mutex);
-  int new_handler_count = --handled_signals[signum];
+  int64_t new_handler_count = --handled_signals[signum];
   CHECK_GE(new_handler_count, 0);
   if (new_handler_count == 0)
     handled_signals.erase(signum);
@@ -172,3 +174,5 @@ bool HasSignalJSHandler(int signum) {
 
 
 NODE_MODULE_CONTEXT_AWARE_INTERNAL(signal_wrap, node::SignalWrap::Initialize)
+NODE_MODULE_EXTERNAL_REFERENCE(signal_wrap,
+                               node::SignalWrap::RegisterExternalReferences)

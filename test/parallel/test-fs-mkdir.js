@@ -53,6 +53,25 @@ function nextdir() {
   }));
 }
 
+// fs.mkdir creates directory with mode passed as an options object
+{
+  const pathname = path.join(tmpdir.path, nextdir());
+
+  fs.mkdir(pathname, { mode: 0o777 }, common.mustCall(function(err) {
+    assert.strictEqual(err, null);
+    assert.strictEqual(fs.existsSync(pathname), true);
+  }));
+}
+
+// fs.mkdirSync creates directory with mode passed as an options object
+{
+  const pathname = path.join(tmpdir.path, nextdir());
+
+  fs.mkdirSync(pathname, { mode: 0o777 });
+
+  assert.strictEqual(fs.existsSync(pathname), true);
+}
+
 // mkdirSync successfully creates directory from given path
 {
   const pathname = path.join(tmpdir.path, nextdir());
@@ -229,7 +248,7 @@ if (common.isMainThread && (common.isLinux || common.isOSX)) {
       {
         code: 'ERR_INVALID_ARG_TYPE',
         name: 'TypeError',
-        message: 'The "recursive" argument must be of type boolean.' +
+        message: 'The "options.recursive" property must be of type boolean.' +
           received
       }
     );
@@ -238,7 +257,7 @@ if (common.isMainThread && (common.isLinux || common.isOSX)) {
       {
         code: 'ERR_INVALID_ARG_TYPE',
         name: 'TypeError',
-        message: 'The "recursive" argument must be of type boolean.' +
+        message: 'The "options.recursive" property must be of type boolean.' +
           received
       }
     );

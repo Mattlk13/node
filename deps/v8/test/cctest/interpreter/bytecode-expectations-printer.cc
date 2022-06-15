@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "include/libplatform/libplatform.h"
-#include "include/v8.h"
+#include "include/v8-function.h"
 #include "src/api/api-inl.h"
 #include "src/base/logging.h"
 #include "src/codegen/source-position-table.h"
@@ -51,8 +51,7 @@ const char* const BytecodeExpectationsPrinter::kIndent = "  ";
 
 v8::Local<v8::String> BytecodeExpectationsPrinter::V8StringFromUTF8(
     const char* data) const {
-  return v8::String::NewFromUtf8(isolate_, data, v8::NewStringType::kNormal)
-      .ToLocalChecked();
+  return v8::String::NewFromUtf8(isolate_, data).ToLocalChecked();
 }
 
 std::string BytecodeExpectationsPrinter::WrapCodeInFunction(
@@ -74,10 +73,8 @@ v8::Local<v8::Script> BytecodeExpectationsPrinter::CompileScript(
 
 v8::Local<v8::Module> BytecodeExpectationsPrinter::CompileModule(
     const char* program) const {
-  ScriptOrigin origin(
-      Local<v8::Value>(), Local<v8::Integer>(), Local<v8::Integer>(),
-      Local<v8::Boolean>(), Local<v8::Integer>(), Local<v8::Value>(),
-      Local<v8::Boolean>(), Local<v8::Boolean>(), True(isolate_));
+  ScriptOrigin origin(isolate_, Local<v8::Value>(), 0, 0, false, -1,
+                      Local<v8::Value>(), false, false, true);
   v8::ScriptCompiler::Source source(V8StringFromUTF8(program), origin);
   return v8::ScriptCompiler::CompileModule(isolate_, &source).ToLocalChecked();
 }
@@ -97,8 +94,8 @@ BytecodeExpectationsPrinter::GetBytecodeArrayForGlobal(
   i::Handle<i::JSFunction> js_function =
       i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*function));
 
-  i::Handle<i::BytecodeArray> bytecodes =
-      i::handle(js_function->shared().GetBytecodeArray(), i_isolate());
+  i::Handle<i::BytecodeArray> bytecodes = i::handle(
+      js_function->shared().GetBytecodeArray(i_isolate()), i_isolate());
 
   return bytecodes;
 }
@@ -109,7 +106,7 @@ BytecodeExpectationsPrinter::GetBytecodeArrayForModule(
   i::Handle<i::Module> i_module = v8::Utils::OpenHandle(*module);
   return i::handle(SharedFunctionInfo::cast(
                        Handle<i::SourceTextModule>::cast(i_module)->code())
-                       .GetBytecodeArray(),
+                       .GetBytecodeArray(i_isolate()),
                    i_isolate());
 }
 
@@ -117,7 +114,8 @@ i::Handle<i::BytecodeArray>
 BytecodeExpectationsPrinter::GetBytecodeArrayForScript(
     v8::Local<v8::Script> script) const {
   i::Handle<i::JSFunction> js_function = v8::Utils::OpenHandle(*script);
-  return i::handle(js_function->shared().GetBytecodeArray(), i_isolate());
+  return i::handle(js_function->shared().GetBytecodeArray(i_isolate()),
+                   i_isolate());
 }
 
 i::Handle<i::BytecodeArray>
@@ -128,7 +126,8 @@ BytecodeExpectationsPrinter::GetBytecodeArrayOfCallee(
   i::Handle<i::JSFunction> js_function =
       i::Handle<i::JSFunction>::cast(i_object);
   CHECK(js_function->shared().HasBytecodeArray());
-  return i::handle(js_function->shared().GetBytecodeArray(), i_isolate());
+  return i::handle(js_function->shared().GetBytecodeArray(i_isolate()),
+                   i_isolate());
 }
 
 void BytecodeExpectationsPrinter::PrintEscapedString(
@@ -179,7 +178,7 @@ void BytecodeExpectationsPrinter::PrintBytecodeOperand(
     } else if (register_value.is_function_closure()) {
       *stream << "(closure)";
     } else if (register_value.is_parameter()) {
-      int parameter_index = register_value.ToParameterIndex(parameter_count);
+      int parameter_index = register_value.ToParameterIndex();
       if (parameter_index == 0) {
         *stream << "(this)";
       } else {
@@ -295,7 +294,7 @@ void BytecodeExpectationsPrinter::PrintConstant(
     *stream << i::HeapObject::cast(*constant).map().instance_type();
     if (constant->IsHeapNumber()) {
       *stream << " [";
-      i::HeapNumber::cast(*constant).HeapNumberPrint(*stream);
+      i::HeapNumber::cast(*constant).HeapNumberShortPrint(*stream);
       *stream << "]";
     } else if (constant->IsString()) {
       *stream << " [";
@@ -385,7 +384,6 @@ void BytecodeExpectationsPrinter::PrintExpectation(
       wrap_ ? WrapCodeInFunction(test_function_name_.c_str(), snippet)
             : snippet;
 
-  i::FLAG_enable_one_shot_optimization = oneshot_opt_;
   i::FLAG_compilation_cache = false;
   i::Handle<i::BytecodeArray> bytecode_array;
   if (module_) {

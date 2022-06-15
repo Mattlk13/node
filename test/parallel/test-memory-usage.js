@@ -19,15 +19,18 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Flags: --no-concurrent-array-buffer-freeing
+// Flags: --predictable-gc-schedule
 'use strict';
 const common = require('../common');
 const assert = require('assert');
 
 const r = process.memoryUsage();
 // On IBMi, the rss memory always returns zero
-if (!common.isIBMi)
+if (!common.isIBMi) {
   assert.ok(r.rss > 0);
+  assert.ok(process.memoryUsage.rss() > 0);
+}
+
 assert.ok(r.heapTotal > 0);
 assert.ok(r.heapUsed > 0);
 assert.ok(r.external > 0);
@@ -39,8 +42,8 @@ if (r.arrayBuffers > 0) {
   const ab = new ArrayBuffer(size);
 
   const after = process.memoryUsage();
-  assert(after.external - r.external >= size,
-         `${after.external} - ${r.external} >= ${size}`);
+  assert.ok(after.external - r.external >= size,
+            `${after.external} - ${r.external} >= ${size}`);
   assert.strictEqual(after.arrayBuffers - r.arrayBuffers, size,
                      `${after.arrayBuffers} - ${r.arrayBuffers} === ${size}`);
 }

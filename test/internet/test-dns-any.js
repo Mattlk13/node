@@ -115,28 +115,6 @@ function processResult(res) {
   return types;
 }
 
-TEST(async function test_google(done) {
-  function validateResult(res) {
-    const types = processResult(res);
-    assert.ok(
-      types.A && types.AAAA && types.MX && types.NS && types.TXT && types.SOA,
-      `Missing record type, found ${Object.keys(types)}`);
-  }
-
-  validateResult(await dnsPromises.resolve('google.com', 'ANY'));
-
-  const req = dns.resolve(
-    'google.com',
-    'ANY',
-    common.mustCall(function(err, ret) {
-      assert.ifError(err);
-      validateResult(ret);
-      done();
-    }));
-
-  checkWrap(req);
-});
-
 TEST(async function test_sip2sip_for_naptr(done) {
   function validateResult(res) {
     const types = processResult(res);
@@ -149,8 +127,7 @@ TEST(async function test_sip2sip_for_naptr(done) {
   const req = dns.resolve(
     'sip2sip.info',
     'ANY',
-    common.mustCall(function(err, ret) {
-      assert.ifError(err);
+    common.mustSucceed((ret) => {
       validateResult(ret);
       done();
     }));
@@ -169,8 +146,7 @@ TEST(async function test_google_for_cname_and_srv(done) {
   const req = dns.resolve(
     '_jabber._tcp.google.com',
     'ANY',
-    common.mustCall(function(err, ret) {
-      assert.ifError(err);
+    common.mustSucceed((ret) => {
       validateResult(ret);
       done();
     }));
@@ -189,8 +165,7 @@ TEST(async function test_ptr(done) {
   const req = dns.resolve(
     '8.8.8.8.in-addr.arpa',
     'ANY',
-    common.mustCall(function(err, ret) {
-      assert.ifError(err);
+    common.mustSucceed((ret) => {
       validateResult(ret);
       done();
     }));

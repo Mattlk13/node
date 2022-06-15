@@ -5,7 +5,6 @@
 ---
 wrap: no
 test function name: test
-private methods: yes
 
 ---
 snippet: "
@@ -19,26 +18,25 @@ snippet: "
 "
 frame size: 4
 parameter count: 1
-bytecode array length: 36
+bytecode array length: 32
 bytecodes: [
-  /*   51 E> */ B(StackCheck),
-  /*   56 S> */ B(LdaCurrentContextSlot), U8(5),
+  /*   56 S> */ B(LdaCurrentContextSlot), U8(3),
                 B(TestReferenceEqual), R(this),
                 B(Mov), R(this), R(1),
-                B(JumpIfTrue), U8(18),
-                B(Wide), B(LdaSmi), I16(259),
-                B(Star), R(2),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star2),
                 B(LdaConstant), U8(0),
-                B(Star), R(3),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
+                B(Star3),
+  /*   68 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
                 B(Throw),
-                B(LdaCurrentContextSlot), U8(4),
-                B(Star), R(0),
+                B(LdaImmutableCurrentContextSlot), U8(2),
+                B(Star0),
   /*   70 E> */ B(CallAnyReceiver), R(0), R(1), U8(1), U8(0),
   /*   73 S> */ B(Return),
 ]
 constant pool: [
-  ONE_BYTE_INTERNALIZED_STRING_TYPE ["#a"],
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["A"],
 ]
 handlers: [
 ]
@@ -53,19 +51,31 @@ snippet: "
   var test = B.test;
   test();
 "
-frame size: 2
+frame size: 4
 parameter count: 1
-bytecode array length: 17
+bytecode array length: 40
 bytecodes: [
-  /*   51 E> */ B(StackCheck),
-  /*   56 S> */ B(Wide), B(LdaSmi), I16(261),
-                B(Star), R(0),
+  /*   56 S> */ B(LdaImmutableCurrentContextSlot), U8(2),
+                B(Star1),
+                B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
+                B(Mov), R(this), R(0),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star2),
                 B(LdaConstant), U8(0),
-                B(Star), R(1),
-  /*   64 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(0), U8(2),
+                B(Star3),
+  /*   61 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
+                B(Throw),
+                B(Wide), B(LdaSmi), I16(295),
+                B(Star2),
+                B(LdaConstant), U8(1),
+                B(Star3),
+                B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
                 B(Throw),
 ]
 constant pool: [
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["B"],
   ONE_BYTE_INTERNALIZED_STRING_TYPE ["#b"],
 ]
 handlers: [
@@ -81,19 +91,29 @@ snippet: "
   var test = C.test;
   test();
 "
-frame size: 2
+frame size: 3
 parameter count: 1
-bytecode array length: 17
+bytecode array length: 37
 bytecodes: [
-  /*   51 E> */ B(StackCheck),
-  /*   56 S> */ B(Wide), B(LdaSmi), I16(261),
-                B(Star), R(0),
+  /*   56 S> */ B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
+                B(Mov), R(this), R(0),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star1),
                 B(LdaConstant), U8(0),
-                B(Star), R(1),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(0), U8(2),
+                B(Star2),
+  /*   61 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
+                B(Throw),
+                B(Wide), B(LdaSmi), I16(295),
+                B(Star1),
+                B(LdaConstant), U8(1),
+                B(Star2),
+                B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
                 B(Throw),
 ]
 constant pool: [
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["C"],
   ONE_BYTE_INTERNALIZED_STRING_TYPE ["#c"],
 ]
 handlers: [
@@ -117,65 +137,64 @@ snippet: "
 "
 frame size: 5
 parameter count: 1
-bytecode array length: 143
+bytecode array length: 127
 bytecodes: [
-  /*   81 E> */ B(StackCheck),
-  /*   90 S> */ B(LdaCurrentContextSlot), U8(4),
-                B(Star), R(1),
-                B(LdaCurrentContextSlot), U8(5),
-  /*   94 E> */ B(TestReferenceEqual), R(this),
+  /*   90 S> */ B(LdaImmutableCurrentContextSlot), U8(2),
+                B(Star1),
+                B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
                 B(Mov), R(this), R(0),
-                B(JumpIfTrue), U8(18),
-                B(Wide), B(LdaSmi), I16(259),
-                B(Star), R(2),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star2),
                 B(LdaConstant), U8(0),
-                B(Star), R(3),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
+                B(Star3),
+  /*   95 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
                 B(Throw),
                 B(CallRuntime), U16(Runtime::kLoadPrivateGetter), R(1), U8(1),
-                B(Star), R(2),
+                B(Star2),
                 B(CallProperty0), R(2), R(0), U8(0),
                 B(Inc), U8(2),
-                B(Star), R(2),
+                B(Star2),
   /*   97 E> */ B(CallRuntime), U16(Runtime::kLoadPrivateSetter), R(1), U8(1),
-                B(Star), R(3),
+                B(Star3),
                 B(CallProperty1), R(3), R(0), R(2), U8(3),
-  /*  105 S> */ B(LdaSmi), I8(1),
-                B(Star), R(0),
-                B(LdaCurrentContextSlot), U8(4),
-                B(Star), R(2),
-                B(LdaCurrentContextSlot), U8(5),
-  /*  109 E> */ B(TestReferenceEqual), R(this),
-                B(Mov), R(this), R(1),
-                B(JumpIfTrue), U8(18),
-                B(Wide), B(LdaSmi), I16(260),
-                B(Star), R(3),
-                B(LdaConstant), U8(0),
-                B(Star), R(4),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(3), U8(2),
-                B(Throw),
-                B(CallRuntime), U16(Runtime::kLoadPrivateSetter), R(2), U8(1),
-                B(Star), R(3),
-                B(CallProperty1), R(3), R(1), R(0), U8(5),
-  /*  122 S> */ B(LdaCurrentContextSlot), U8(4),
-                B(Star), R(1),
-                B(LdaCurrentContextSlot), U8(5),
-  /*  133 E> */ B(TestReferenceEqual), R(this),
+  /*  105 S> */ B(LdaImmutableCurrentContextSlot), U8(2),
+                B(Star1),
+                B(LdaSmi), I8(1),
+                B(Star2),
+                B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
                 B(Mov), R(this), R(0),
-                B(JumpIfTrue), U8(18),
-                B(Wide), B(LdaSmi), I16(259),
-                B(Star), R(2),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star3),
                 B(LdaConstant), U8(0),
-                B(Star), R(3),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
+                B(Star4),
+  /*  110 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(3), U8(2),
+                B(Throw),
+                B(CallRuntime), U16(Runtime::kLoadPrivateSetter), R(1), U8(1),
+                B(Star3),
+                B(CallProperty1), R(3), R(0), R(2), U8(5),
+  /*  122 S> */ B(LdaImmutableCurrentContextSlot), U8(2),
+                B(Star1),
+                B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
+                B(Mov), R(this), R(0),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star2),
+                B(LdaConstant), U8(0),
+                B(Star3),
+  /*  134 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
                 B(Throw),
                 B(CallRuntime), U16(Runtime::kLoadPrivateGetter), R(1), U8(1),
-                B(Star), R(2),
+                B(Star2),
                 B(CallProperty0), R(2), R(0), U8(7),
   /*  137 S> */ B(Return),
 ]
 constant pool: [
-  ONE_BYTE_INTERNALIZED_STRING_TYPE ["#d"],
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["D"],
 ]
 handlers: [
 ]
@@ -189,19 +208,29 @@ snippet: "
   var test = E.test;
   test();
 "
-frame size: 2
+frame size: 3
 parameter count: 1
-bytecode array length: 17
+bytecode array length: 37
 bytecodes: [
-  /*   55 E> */ B(StackCheck),
-  /*   60 S> */ B(Wide), B(LdaSmi), I16(263),
-                B(Star), R(0),
+  /*   60 S> */ B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
+                B(Mov), R(this), R(0),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star1),
                 B(LdaConstant), U8(0),
-                B(Star), R(1),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(0), U8(2),
+                B(Star2),
+  /*   65 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
+                B(Throw),
+                B(Wide), B(LdaSmi), I16(297),
+                B(Star1),
+                B(LdaConstant), U8(1),
+                B(Star2),
+                B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
                 B(Throw),
 ]
 constant pool: [
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["E"],
   ONE_BYTE_INTERNALIZED_STRING_TYPE ["#e"],
 ]
 handlers: [
@@ -216,19 +245,29 @@ snippet: "
   var test = F.test;
   test();
 "
-frame size: 2
+frame size: 3
 parameter count: 1
-bytecode array length: 17
+bytecode array length: 37
 bytecodes: [
-  /*   48 E> */ B(StackCheck),
-  /*   53 S> */ B(Wide), B(LdaSmi), I16(262),
-                B(Star), R(0),
+  /*   53 S> */ B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
+                B(Mov), R(this), R(0),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star1),
                 B(LdaConstant), U8(0),
-                B(Star), R(1),
-                B(CallRuntime), U16(Runtime::kNewTypeError), R(0), U8(2),
+                B(Star2),
+  /*   58 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
+                B(Throw),
+                B(Wide), B(LdaSmi), I16(296),
+                B(Star1),
+                B(LdaConstant), U8(1),
+                B(Star2),
+                B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
                 B(Throw),
 ]
 constant pool: [
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["F"],
   ONE_BYTE_INTERNALIZED_STRING_TYPE ["#f"],
 ]
 handlers: [
@@ -243,19 +282,31 @@ snippet: "
   var test = G.test;
   test();
 "
-frame size: 2
+frame size: 4
 parameter count: 1
-bytecode array length: 17
+bytecode array length: 40
 bytecodes: [
-  /*   55 E> */ B(StackCheck),
-  /*   60 S> */ B(Wide), B(LdaSmi), I16(263),
-                B(Star), R(0),
+  /*   60 S> */ B(LdaImmutableCurrentContextSlot), U8(2),
+                B(Star1),
+                B(LdaCurrentContextSlot), U8(3),
+                B(TestReferenceEqual), R(this),
+                B(Mov), R(this), R(0),
+                B(JumpIfTrue), U8(16),
+                B(Wide), B(LdaSmi), I16(289),
+                B(Star2),
                 B(LdaConstant), U8(0),
-                B(Star), R(1),
-  /*   68 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(0), U8(2),
+                B(Star3),
+  /*   65 E> */ B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
+                B(Throw),
+                B(Wide), B(LdaSmi), I16(297),
+                B(Star2),
+                B(LdaConstant), U8(1),
+                B(Star3),
+                B(CallRuntime), U16(Runtime::kNewTypeError), R(2), U8(2),
                 B(Throw),
 ]
 constant pool: [
+  ONE_BYTE_INTERNALIZED_STRING_TYPE ["G"],
   ONE_BYTE_INTERNALIZED_STRING_TYPE ["#d"],
 ]
 handlers: [
@@ -272,13 +323,14 @@ snippet: "
 "
 frame size: 3
 parameter count: 1
-bytecode array length: 17
+bytecode array length: 19
 bytecodes: [
-  /*   41 E> */ B(StackCheck),
-  /*   46 S> */ B(Wide), B(LdaSmi), I16(262),
-                B(Star), R(1),
+  /*   46 S> */ B(LdaImmutableCurrentContextSlot), U8(3),
+  /*   51 E> */ B(GetKeyedProperty), R(this), U8(0),
+                B(Wide), B(LdaSmi), I16(296),
+                B(Star1),
                 B(LdaConstant), U8(0),
-                B(Star), R(2),
+                B(Star2),
                 B(CallRuntime), U16(Runtime::kNewTypeError), R(1), U8(2),
                 B(Throw),
 ]

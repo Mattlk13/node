@@ -19,14 +19,14 @@ namespace internal {
 // wrapper: get it via GetEntryForIndex, pass it on to consumers.
 class InternalIndex {
  public:
-  explicit InternalIndex(size_t raw) : entry_(raw) {}
+  explicit constexpr InternalIndex(size_t raw) : entry_(raw) {}
   static InternalIndex NotFound() { return InternalIndex(kNotFound); }
 
-  InternalIndex adjust_down(size_t subtract) {
+  V8_WARN_UNUSED_RESULT InternalIndex adjust_down(size_t subtract) const {
     DCHECK_GE(entry_, subtract);
     return InternalIndex(entry_ - subtract);
   }
-  InternalIndex adjust_up(size_t add) {
+  V8_WARN_UNUSED_RESULT InternalIndex adjust_up(size_t add) const {
     DCHECK_LT(entry_, std::numeric_limits<size_t>::max() - add);
     return InternalIndex(entry_ + add);
   }
@@ -39,19 +39,27 @@ class InternalIndex {
     DCHECK_LE(entry_, std::numeric_limits<uint32_t>::max());
     return static_cast<uint32_t>(entry_);
   }
-  int as_int() const {
-    DCHECK(entry_ >= 0 && entry_ <= std::numeric_limits<int>::max());
+  constexpr int as_int() const {
+    DCHECK_GE(std::numeric_limits<int>::max(), entry_);
     return static_cast<int>(entry_);
   }
 
-  bool operator==(const InternalIndex& other) { return entry_ == other.entry_; }
+  bool operator==(const InternalIndex& other) const {
+    return entry_ == other.entry_;
+  }
 
   // Iteration support.
   InternalIndex operator*() { return *this; }
-  bool operator!=(const InternalIndex& other) { return entry_ != other.entry_; }
+  bool operator!=(const InternalIndex& other) const {
+    return entry_ != other.entry_;
+  }
   InternalIndex& operator++() {
     entry_++;
     return *this;
+  }
+
+  bool operator<(const InternalIndex& other) const {
+    return entry_ < other.entry_;
   }
 
   class Range {

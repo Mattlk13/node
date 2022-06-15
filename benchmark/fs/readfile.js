@@ -14,13 +14,17 @@ const filename = path.resolve(tmpdir.path,
                               `.removeme-benchmark-garbage-${process.pid}`);
 
 const bench = common.createBenchmark(main, {
-  dur: [5],
+  duration: [5],
   len: [1024, 16 * 1024 * 1024],
   concurrent: [1, 10]
 });
 
-function main({ len, dur, concurrent }) {
-  try { fs.unlinkSync(filename); } catch {}
+function main({ len, duration, concurrent }) {
+  try {
+    fs.unlinkSync(filename);
+  } catch {
+    // Continue regardless of error.
+  }
   let data = Buffer.alloc(len, 'x');
   fs.writeFileSync(filename, data);
   data = null;
@@ -31,9 +35,13 @@ function main({ len, dur, concurrent }) {
   setTimeout(() => {
     benchEnded = true;
     bench.end(reads);
-    try { fs.unlinkSync(filename); } catch {}
+    try {
+      fs.unlinkSync(filename);
+    } catch {
+      // Continue regardless of error.
+    }
     process.exit(0);
-  }, dur * 1000);
+  }, duration * 1000);
 
   function read() {
     fs.readFile(filename, afterRead);

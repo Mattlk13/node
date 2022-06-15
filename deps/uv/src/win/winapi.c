@@ -36,9 +36,6 @@ sNtQueryDirectoryFile pNtQueryDirectoryFile;
 sNtQuerySystemInformation pNtQuerySystemInformation;
 sNtQueryInformationProcess pNtQueryInformationProcess;
 
-/* Advapi32 function pointers */
-sRtlGenRandom pRtlGenRandom;
-
 /* Kernel32 function pointers */
 sGetQueuedCompletionStatusEx pGetQueuedCompletionStatusEx;
 
@@ -48,13 +45,15 @@ sPowerRegisterSuspendResumeNotification pPowerRegisterSuspendResumeNotification;
 /* User32.dll function pointer */
 sSetWinEventHook pSetWinEventHook;
 
+/* ws2_32.dll function pointer */
+uv_sGetHostNameW pGetHostNameW;
 
 void uv_winapi_init(void) {
   HMODULE ntdll_module;
   HMODULE powrprof_module;
   HMODULE user32_module;
   HMODULE kernel32_module;
-  HMODULE advapi32_module;
+  HMODULE ws2_32_module;
 
   ntdll_module = GetModuleHandleA("ntdll.dll");
   if (ntdll_module == NULL) {
@@ -139,11 +138,10 @@ void uv_winapi_init(void) {
       GetProcAddress(user32_module, "SetWinEventHook");
   }
 
-  advapi32_module = GetModuleHandleA("advapi32.dll");
-  if (advapi32_module == NULL) {
-    uv_fatal_error(GetLastError(), "GetModuleHandleA");
+  ws2_32_module = LoadLibraryA("ws2_32.dll");
+  if (ws2_32_module != NULL) {
+    pGetHostNameW = (uv_sGetHostNameW) GetProcAddress(
+        ws2_32_module,
+        "GetHostNameW");
   }
-
-  pRtlGenRandom =
-      (sRtlGenRandom) GetProcAddress(advapi32_module, "SystemFunction036");
 }

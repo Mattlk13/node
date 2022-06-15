@@ -10,16 +10,15 @@
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
-
-#include "torque-generated/instance-types-tq.h"
+#include "torque-generated/instance-types.h"
 
 namespace v8 {
 namespace internal {
 
 // We use the full 16 bits of the instance_type field to encode heap object
-// instance types. All the high-order bits (bits 6-15) are cleared if the object
+// instance types. All the high-order bits (bits 7-15) are cleared if the object
 // is a string, and contain set bits if it is not a string.
-const uint32_t kIsNotStringMask = ~((1 << 6) - 1);
+const uint32_t kIsNotStringMask = ~((1 << 7) - 1);
 const uint32_t kStringTag = 0x0;
 
 // For strings, bits 0-2 indicate the representation of the string. In
@@ -34,16 +33,11 @@ enum StringRepresentationTag {
 };
 const uint32_t kIsIndirectStringMask = 1 << 0;
 const uint32_t kIsIndirectStringTag = 1 << 0;
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((kSeqStringTag & kIsIndirectStringMask) == 0);
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((kExternalStringTag & kIsIndirectStringMask) == 0);
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((kConsStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((kSlicedStringTag & kIsIndirectStringMask) ==
               kIsIndirectStringTag);
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((kThinStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
 
 // For strings, bit 3 indicates whether the string consists of two-byte
@@ -51,6 +45,16 @@ STATIC_ASSERT((kThinStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
 const uint32_t kStringEncodingMask = 1 << 3;
 const uint32_t kTwoByteStringTag = 0;
 const uint32_t kOneByteStringTag = 1 << 3;
+
+// Combined tags for convenience (add more if needed).
+constexpr uint32_t kStringRepresentationAndEncodingMask =
+    kStringRepresentationMask | kStringEncodingMask;
+constexpr uint32_t kSeqOneByteStringTag = kSeqStringTag | kOneByteStringTag;
+constexpr uint32_t kSeqTwoByteStringTag = kSeqStringTag | kTwoByteStringTag;
+constexpr uint32_t kExternalOneByteStringTag =
+    kExternalStringTag | kOneByteStringTag;
+constexpr uint32_t kExternalTwoByteStringTag =
+    kExternalStringTag | kTwoByteStringTag;
 
 // For strings, bit 4 indicates whether the data pointer of an external string
 // is cached. Note that the string representation is expected to be
@@ -63,6 +67,26 @@ const uint32_t kUncachedExternalStringTag = 1 << 4;
 const uint32_t kIsNotInternalizedMask = 1 << 5;
 const uint32_t kNotInternalizedTag = 1 << 5;
 const uint32_t kInternalizedTag = 0;
+
+// For strings, bit 6 indicates that the string is accessible by more than one
+// thread. Note that a string that is allocated in the shared heap is not
+// accessible by more than one thread until it is explicitly shared (e.g. by
+// postMessage).
+//
+// Runtime code that shares strings with other threads directly need to manually
+// set this bit.
+//
+// TODO(v8:12007): External strings cannot be shared yet.
+//
+// TODO(v8:12007): This bit is currently ignored on internalized strings, which
+// are either always shared or always not shared depending on
+// FLAG_shared_string_table. This will be hardcoded once
+// FLAG_shared_string_table is removed.
+const uint32_t kSharedStringMask = 1 << 6;
+const uint32_t kSharedStringTag = 1 << 6;
+
+constexpr uint32_t kStringRepresentationEncodingAndSharedMask =
+    kStringRepresentationAndEncodingMask | kSharedStringMask;
 
 // A ConsString with an empty string as the right side is a candidate
 // for being shortcut by the garbage collector. We don't allocate any
@@ -115,6 +139,11 @@ enum InstanceType : uint16_t {
   THIN_STRING_TYPE = kTwoByteStringTag | kThinStringTag | kNotInternalizedTag,
   THIN_ONE_BYTE_STRING_TYPE =
       kOneByteStringTag | kThinStringTag | kNotInternalizedTag,
+  SHARED_STRING_TYPE = STRING_TYPE | kSharedStringTag,
+  SHARED_ONE_BYTE_STRING_TYPE = ONE_BYTE_STRING_TYPE | kSharedStringTag,
+  SHARED_THIN_STRING_TYPE = THIN_STRING_TYPE | kSharedStringTag,
+  SHARED_THIN_ONE_BYTE_STRING_TYPE =
+      THIN_ONE_BYTE_STRING_TYPE | kSharedStringTag,
 
 // Most instance types are defined in Torque, with the exception of the string
 // types above. They are ordered by inheritance hierarchy so that we can easily
@@ -126,10 +155,6 @@ enum InstanceType : uint16_t {
 // - JSSpecialObject and JSCustomElementsObject are aligned with the beginning
 //   of the JSObject range, so that we can use a larger range check from
 //   FIRST_JS_RECEIVER_TYPE to the end of those ranges and include JSProxy too.
-// - JSFunction is last, meaning we can use a single inequality check to
-//   determine whether an instance type is within the range for any class in the
-//   inheritance hierarchy of JSFunction. This includes commonly-checked classes
-//   JSObject and JSReceiver.
 #define MAKE_TORQUE_INSTANCE_TYPE(TYPE, value) TYPE = value,
   TORQUE_ASSIGNED_INSTANCE_TYPES(MAKE_TORQUE_INSTANCE_TYPE)
 #undef MAKE_TORQUE_INSTANCE_TYPE
@@ -138,6 +163,9 @@ enum InstanceType : uint16_t {
   FIRST_UNIQUE_NAME_TYPE = INTERNALIZED_STRING_TYPE,
   LAST_UNIQUE_NAME_TYPE = SYMBOL_TYPE,
   FIRST_NONSTRING_TYPE = SYMBOL_TYPE,
+  // Callable JS Functions are all JS Functions except class constructors.
+  FIRST_CALLABLE_JS_FUNCTION_TYPE = FIRST_JS_FUNCTION_TYPE,
+  LAST_CALLABLE_JS_FUNCTION_TYPE = JS_CLASS_CONSTRUCTOR_TYPE - 1,
   // Boundary for testing JSReceivers that need special property lookup handling
   LAST_SPECIAL_RECEIVER_TYPE = LAST_JS_SPECIAL_OBJECT_TYPE,
   // Boundary case for testing JSReceivers that may have elements while having
@@ -148,21 +176,25 @@ enum InstanceType : uint16_t {
   // Convenient names for things where the generated name is awkward:
   FIRST_TYPE = FIRST_HEAP_OBJECT_TYPE,
   LAST_TYPE = LAST_HEAP_OBJECT_TYPE,
-  FIRST_FUNCTION_TYPE = FIRST_JS_FUNCTION_OR_BOUND_FUNCTION_TYPE,
-  LAST_FUNCTION_TYPE = LAST_JS_FUNCTION_OR_BOUND_FUNCTION_TYPE,
   BIGINT_TYPE = BIG_INT_BASE_TYPE,
+
+#ifdef V8_EXTERNAL_CODE_SPACE
+  CODET_TYPE = CODE_DATA_CONTAINER_TYPE,
+#else
+  CODET_TYPE = CODE_TYPE,
+#endif
 };
 
 // This constant is defined outside of the InstanceType enum because the
-// string instance types are sparce and there's no such a string instance type.
+// string instance types are sparse and there's no such string instance type.
 // But it's still useful for range checks to have such a value.
 constexpr InstanceType LAST_STRING_TYPE =
     static_cast<InstanceType>(FIRST_NONSTRING_TYPE - 1);
 
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((FIRST_NONSTRING_TYPE & kIsNotStringMask) != kStringTag);
 STATIC_ASSERT(JS_OBJECT_TYPE == Internals::kJSObjectType);
-STATIC_ASSERT(JS_API_OBJECT_TYPE == Internals::kJSApiObjectType);
+STATIC_ASSERT(FIRST_JS_API_OBJECT_TYPE == Internals::kFirstJSApiObjectType);
+STATIC_ASSERT(LAST_JS_API_OBJECT_TYPE == Internals::kLastJSApiObjectType);
 STATIC_ASSERT(JS_SPECIAL_API_OBJECT_TYPE == Internals::kJSSpecialApiObjectType);
 STATIC_ASSERT(FIRST_NONSTRING_TYPE == Internals::kFirstNonstringType);
 STATIC_ASSERT(ODDBALL_TYPE == Internals::kOddballType);
@@ -177,6 +209,13 @@ STRING_TYPE_LIST(CHECK_STRING_RANGE)
 TORQUE_ASSIGNED_INSTANCE_TYPE_LIST(CHECK_NONSTRING_RANGE)
 #undef CHECK_NONSTRING_RANGE
 
+// classConstructor type has to be the last one in the JS Function type range.
+STATIC_ASSERT(JS_CLASS_CONSTRUCTOR_TYPE == LAST_JS_FUNCTION_TYPE);
+static_assert(JS_CLASS_CONSTRUCTOR_TYPE < FIRST_CALLABLE_JS_FUNCTION_TYPE ||
+                  JS_CLASS_CONSTRUCTOR_TYPE > LAST_CALLABLE_JS_FUNCTION_TYPE,
+              "JS_CLASS_CONSTRUCTOR_TYPE must not be in the callable JS "
+              "function type range");
+
 // Two ranges don't cleanly follow the inheritance hierarchy. Here we ensure
 // that only expected types fall within these ranges.
 // - From FIRST_JS_RECEIVER_TYPE to LAST_SPECIAL_RECEIVER_TYPE should correspond
@@ -185,20 +224,26 @@ TORQUE_ASSIGNED_INSTANCE_TYPE_LIST(CHECK_NONSTRING_RANGE)
 //   correspond to the union type JSProxy | JSCustomElementsObject.
 // Note in particular that these ranges include all subclasses of JSReceiver
 // that are not also subclasses of JSObject (currently only JSProxy).
+// clang-format off
 #define CHECK_INSTANCE_TYPE(TYPE)                                          \
   STATIC_ASSERT((TYPE >= FIRST_JS_RECEIVER_TYPE &&                         \
                  TYPE <= LAST_SPECIAL_RECEIVER_TYPE) ==                    \
-                (TYPE == JS_PROXY_TYPE || TYPE == JS_GLOBAL_OBJECT_TYPE || \
+                (IF_WASM(EXPAND, TYPE == WASM_STRUCT_TYPE ||               \
+                                 TYPE == WASM_ARRAY_TYPE ||)               \
+                 TYPE == JS_PROXY_TYPE || TYPE == JS_GLOBAL_OBJECT_TYPE || \
                  TYPE == JS_GLOBAL_PROXY_TYPE ||                           \
                  TYPE == JS_MODULE_NAMESPACE_TYPE ||                       \
                  TYPE == JS_SPECIAL_API_OBJECT_TYPE));                     \
   STATIC_ASSERT((TYPE >= FIRST_JS_RECEIVER_TYPE &&                         \
                  TYPE <= LAST_CUSTOM_ELEMENTS_RECEIVER) ==                 \
-                (TYPE == JS_PROXY_TYPE || TYPE == JS_GLOBAL_OBJECT_TYPE || \
+                (IF_WASM(EXPAND, TYPE == WASM_STRUCT_TYPE ||               \
+                                 TYPE == WASM_ARRAY_TYPE ||)               \
+                 TYPE == JS_PROXY_TYPE || TYPE == JS_GLOBAL_OBJECT_TYPE || \
                  TYPE == JS_GLOBAL_PROXY_TYPE ||                           \
                  TYPE == JS_MODULE_NAMESPACE_TYPE ||                       \
                  TYPE == JS_SPECIAL_API_OBJECT_TYPE ||                     \
                  TYPE == JS_PRIMITIVE_WRAPPER_TYPE));
+// clang-format on
 TORQUE_ASSIGNED_INSTANCE_TYPE_LIST(CHECK_INSTANCE_TYPE)
 #undef CHECK_INSTANCE_TYPE
 
@@ -210,150 +255,20 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
                                            InstanceType instance_type);
 
 // List of object types that have a single unique instance type.
-#define INSTANCE_TYPE_CHECKERS_SINGLE_BASE(V)                                \
-  V(AllocationSite, ALLOCATION_SITE_TYPE)                                    \
-  V(BigInt, BIGINT_TYPE)                                                     \
-  V(ObjectBoilerplateDescription, OBJECT_BOILERPLATE_DESCRIPTION_TYPE)       \
-  V(BreakPoint, TUPLE2_TYPE)                                                 \
-  V(BreakPointInfo, TUPLE2_TYPE)                                             \
-  V(ByteArray, BYTE_ARRAY_TYPE)                                              \
-  V(BytecodeArray, BYTECODE_ARRAY_TYPE)                                      \
-  V(CallHandlerInfo, CALL_HANDLER_INFO_TYPE)                                 \
-  V(Cell, CELL_TYPE)                                                         \
-  V(Code, CODE_TYPE)                                                         \
-  V(CachedTemplateObject, TUPLE3_TYPE)                                       \
-  V(CodeDataContainer, CODE_DATA_CONTAINER_TYPE)                             \
-  V(CoverageInfo, FIXED_ARRAY_TYPE)                                          \
-  V(ClosureFeedbackCellArray, CLOSURE_FEEDBACK_CELL_ARRAY_TYPE)              \
-  V(DescriptorArray, DESCRIPTOR_ARRAY_TYPE)                                  \
-  V(EmbedderDataArray, EMBEDDER_DATA_ARRAY_TYPE)                             \
-  V(EphemeronHashTable, EPHEMERON_HASH_TABLE_TYPE)                           \
-  V(FeedbackCell, FEEDBACK_CELL_TYPE)                                        \
-  V(FeedbackMetadata, FEEDBACK_METADATA_TYPE)                                \
-  V(FeedbackVector, FEEDBACK_VECTOR_TYPE)                                    \
-  V(FixedArrayExact, FIXED_ARRAY_TYPE)                                       \
-  V(FixedDoubleArray, FIXED_DOUBLE_ARRAY_TYPE)                               \
-  V(Foreign, FOREIGN_TYPE)                                                   \
-  V(FreeSpace, FREE_SPACE_TYPE)                                              \
-  V(GlobalDictionary, GLOBAL_DICTIONARY_TYPE)                                \
-  V(HeapNumber, HEAP_NUMBER_TYPE)                                            \
-  V(JSArgumentsObject, JS_ARGUMENTS_OBJECT_TYPE)                             \
-  V(JSArgumentsObjectWithLength, JS_ARGUMENTS_OBJECT_TYPE)                   \
-  V(JSArray, JS_ARRAY_TYPE)                                                  \
-  V(JSArrayBuffer, JS_ARRAY_BUFFER_TYPE)                                     \
-  V(JSArrayIterator, JS_ARRAY_ITERATOR_TYPE)                                 \
-  V(JSAsyncFromSyncIterator, JS_ASYNC_FROM_SYNC_ITERATOR_TYPE)               \
-  V(JSAsyncFunctionObject, JS_ASYNC_FUNCTION_OBJECT_TYPE)                    \
-  V(JSAsyncGeneratorObject, JS_ASYNC_GENERATOR_OBJECT_TYPE)                  \
-  V(JSBoundFunction, JS_BOUND_FUNCTION_TYPE)                                 \
-  V(JSContextExtensionObject, JS_CONTEXT_EXTENSION_OBJECT_TYPE)              \
-  V(JSDataView, JS_DATA_VIEW_TYPE)                                           \
-  V(JSDate, JS_DATE_TYPE)                                                    \
-  V(JSError, JS_ERROR_TYPE)                                                  \
-  V(JSFinalizationGroup, JS_FINALIZATION_GROUP_TYPE)                         \
-  V(JSFinalizationGroupCleanupIterator,                                      \
-    JS_FINALIZATION_GROUP_CLEANUP_ITERATOR_TYPE)                             \
-  V(JSFunction, JS_FUNCTION_TYPE)                                            \
-  V(JSGlobalObject, JS_GLOBAL_OBJECT_TYPE)                                   \
-  V(JSGlobalProxy, JS_GLOBAL_PROXY_TYPE)                                     \
-  V(JSMap, JS_MAP_TYPE)                                                      \
-  V(JSMessageObject, JS_MESSAGE_OBJECT_TYPE)                                 \
-  V(JSModuleNamespace, JS_MODULE_NAMESPACE_TYPE)                             \
-  V(JSPrimitiveWrapper, JS_PRIMITIVE_WRAPPER_TYPE)                           \
-  V(JSPromise, JS_PROMISE_TYPE)                                              \
-  V(JSProxy, JS_PROXY_TYPE)                                                  \
-  V(JSRegExp, JS_REG_EXP_TYPE)                                               \
-  V(JSRegExpResult, JS_ARRAY_TYPE)                                           \
-  V(JSRegExpResultIndices, JS_ARRAY_TYPE)                                    \
-  V(JSRegExpStringIterator, JS_REG_EXP_STRING_ITERATOR_TYPE)                 \
-  V(JSSet, JS_SET_TYPE)                                                      \
-  V(JSStringIterator, JS_STRING_ITERATOR_TYPE)                               \
-  V(JSTypedArray, JS_TYPED_ARRAY_TYPE)                                       \
-  V(JSWeakMap, JS_WEAK_MAP_TYPE)                                             \
-  V(JSWeakRef, JS_WEAK_REF_TYPE)                                             \
-  V(JSWeakSet, JS_WEAK_SET_TYPE)                                             \
-  V(LoadHandler, LOAD_HANDLER_TYPE)                                          \
-  V(Map, MAP_TYPE)                                                           \
-  V(NameDictionary, NAME_DICTIONARY_TYPE)                                    \
-  V(NativeContext, NATIVE_CONTEXT_TYPE)                                      \
-  V(NumberDictionary, NUMBER_DICTIONARY_TYPE)                                \
-  V(Oddball, ODDBALL_TYPE)                                                   \
-  V(OrderedHashMap, ORDERED_HASH_MAP_TYPE)                                   \
-  V(OrderedHashSet, ORDERED_HASH_SET_TYPE)                                   \
-  V(OrderedNameDictionary, ORDERED_NAME_DICTIONARY_TYPE)                     \
-  V(PreparseData, PREPARSE_DATA_TYPE)                                        \
-  V(PropertyArray, PROPERTY_ARRAY_TYPE)                                      \
-  V(PropertyCell, PROPERTY_CELL_TYPE)                                        \
-  V(PropertyDescriptorObject, FIXED_ARRAY_TYPE)                              \
-  V(ScopeInfo, SCOPE_INFO_TYPE)                                              \
-  V(ScriptContextTable, SCRIPT_CONTEXT_TABLE_TYPE)                           \
-  V(SharedFunctionInfo, SHARED_FUNCTION_INFO_TYPE)                           \
-  V(SimpleNumberDictionary, SIMPLE_NUMBER_DICTIONARY_TYPE)                   \
-  V(SmallOrderedHashMap, SMALL_ORDERED_HASH_MAP_TYPE)                        \
-  V(SmallOrderedHashSet, SMALL_ORDERED_HASH_SET_TYPE)                        \
-  V(SmallOrderedNameDictionary, SMALL_ORDERED_NAME_DICTIONARY_TYPE)          \
-  V(SourceTextModule, SOURCE_TEXT_MODULE_TYPE)                               \
-  V(StoreHandler, STORE_HANDLER_TYPE)                                        \
-  V(StringTable, STRING_TABLE_TYPE)                                          \
-  V(Symbol, SYMBOL_TYPE)                                                     \
-  V(SyntheticModule, SYNTHETIC_MODULE_TYPE)                                  \
-  V(TransitionArray, TRANSITION_ARRAY_TYPE)                                  \
-  V(UncompiledDataWithoutPreparseData,                                       \
-    UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_TYPE)                              \
-  V(UncompiledDataWithPreparseData, UNCOMPILED_DATA_WITH_PREPARSE_DATA_TYPE) \
-  V(WasmExceptionObject, WASM_EXCEPTION_OBJECT_TYPE)                         \
-  V(WasmGlobalObject, WASM_GLOBAL_OBJECT_TYPE)                               \
-  V(WasmInstanceObject, WASM_INSTANCE_OBJECT_TYPE)                           \
-  V(WasmMemoryObject, WASM_MEMORY_OBJECT_TYPE)                               \
-  V(WasmModuleObject, WASM_MODULE_OBJECT_TYPE)                               \
-  V(WasmTableObject, WASM_TABLE_OBJECT_TYPE)                                 \
-  V(WeakArrayList, WEAK_ARRAY_LIST_TYPE)                                     \
-  V(WeakCell, WEAK_CELL_TYPE)
-#ifdef V8_INTL_SUPPORT
+#define INSTANCE_TYPE_CHECKERS_SINGLE(V)           \
+  TORQUE_INSTANCE_CHECKERS_SINGLE_FULLY_DEFINED(V) \
+  TORQUE_INSTANCE_CHECKERS_SINGLE_ONLY_DECLARED(V) \
+  V(BigInt, BIGINT_TYPE)                           \
+  V(FixedArrayExact, FIXED_ARRAY_TYPE)
 
-#define INSTANCE_TYPE_CHECKERS_SINGLE(V)                \
-  INSTANCE_TYPE_CHECKERS_SINGLE_BASE(V)                 \
-  V(JSV8BreakIterator, JS_V8_BREAK_ITERATOR_TYPE)       \
-  V(JSCollator, JS_COLLATOR_TYPE)                       \
-  V(JSDateTimeFormat, JS_DATE_TIME_FORMAT_TYPE)         \
-  V(JSListFormat, JS_LIST_FORMAT_TYPE)                  \
-  V(JSLocale, JS_LOCALE_TYPE)                           \
-  V(JSNumberFormat, JS_NUMBER_FORMAT_TYPE)              \
-  V(JSPluralRules, JS_PLURAL_RULES_TYPE)                \
-  V(JSRelativeTimeFormat, JS_RELATIVE_TIME_FORMAT_TYPE) \
-  V(JSSegmentIterator, JS_SEGMENT_ITERATOR_TYPE)        \
-  V(JSSegmenter, JS_SEGMENTER_TYPE)
-
-#else
-
-#define INSTANCE_TYPE_CHECKERS_SINGLE(V) INSTANCE_TYPE_CHECKERS_SINGLE_BASE(V)
-
-#endif  // V8_INTL_SUPPORT
-
-#define INSTANCE_TYPE_CHECKERS_RANGE(V)                                   \
-  V(Context, FIRST_CONTEXT_TYPE, LAST_CONTEXT_TYPE)                       \
-  V(FixedArray, FIRST_FIXED_ARRAY_TYPE, LAST_FIXED_ARRAY_TYPE)            \
-  V(HashTable, FIRST_HASH_TABLE_TYPE, LAST_HASH_TABLE_TYPE)               \
-  V(JSCustomElementsObject, FIRST_JS_CUSTOM_ELEMENTS_OBJECT_TYPE,         \
-    LAST_JS_CUSTOM_ELEMENTS_OBJECT_TYPE)                                  \
-  V(JSFunctionOrBoundFunction, FIRST_FUNCTION_TYPE, LAST_FUNCTION_TYPE)   \
-  V(JSMapIterator, FIRST_JS_MAP_ITERATOR_TYPE, LAST_JS_MAP_ITERATOR_TYPE) \
-  V(JSSetIterator, FIRST_JS_SET_ITERATOR_TYPE, LAST_JS_SET_ITERATOR_TYPE) \
-  V(JSSpecialObject, FIRST_JS_SPECIAL_OBJECT_TYPE,                        \
-    LAST_JS_SPECIAL_OBJECT_TYPE)                                          \
-  V(Microtask, FIRST_MICROTASK_TYPE, LAST_MICROTASK_TYPE)                 \
-  V(Module, FIRST_MODULE_TYPE, LAST_MODULE_TYPE)                          \
-  V(Name, FIRST_NAME_TYPE, LAST_NAME_TYPE)                                \
-  V(PrimitiveHeapObject, FIRST_PRIMITIVE_HEAP_OBJECT_TYPE,                \
-    LAST_PRIMITIVE_HEAP_OBJECT_TYPE)                                      \
-  V(String, FIRST_STRING_TYPE, LAST_STRING_TYPE)                          \
-  V(WeakFixedArray, FIRST_WEAK_FIXED_ARRAY_TYPE, LAST_WEAK_FIXED_ARRAY_TYPE)
+#define INSTANCE_TYPE_CHECKERS_RANGE(V)           \
+  TORQUE_INSTANCE_CHECKERS_RANGE_FULLY_DEFINED(V) \
+  TORQUE_INSTANCE_CHECKERS_RANGE_ONLY_DECLARED(V)
 
 #define INSTANCE_TYPE_CHECKERS_CUSTOM(V) \
-  V(FixedArrayBase)                      \
-  V(InternalizedString)                  \
-  V(JSObject)                            \
-  V(JSReceiver)
+  V(FreeSpaceOrFiller)                   \
+  V(ExternalString)                      \
+  V(InternalizedString)
 
 #define INSTANCE_TYPE_CHECKERS(V)  \
   INSTANCE_TYPE_CHECKERS_SINGLE(V) \
@@ -362,7 +277,7 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
 
 namespace InstanceTypeChecker {
 #define IS_TYPE_FUNCTION_DECL(Type, ...) \
-  V8_INLINE bool Is##Type(InstanceType instance_type);
+  V8_INLINE constexpr bool Is##Type(InstanceType instance_type);
 
 INSTANCE_TYPE_CHECKERS(IS_TYPE_FUNCTION_DECL)
 
@@ -371,13 +286,60 @@ INSTANCE_TYPE_CHECKERS(IS_TYPE_FUNCTION_DECL)
 TYPED_ARRAYS(TYPED_ARRAY_IS_TYPE_FUNCTION_DECL)
 #undef TYPED_ARRAY_IS_TYPE_FUNCTION_DECL
 
-#define STRUCT_IS_TYPE_FUNCTION_DECL(NAME, Name, name) \
-  IS_TYPE_FUNCTION_DECL(Name)
-STRUCT_LIST(STRUCT_IS_TYPE_FUNCTION_DECL)
-#undef STRUCT_IS_TYPE_FUNCTION_DECL
-
 #undef IS_TYPE_FUNCTION_DECL
 }  // namespace InstanceTypeChecker
+
+// This list must contain only maps that are shared by all objects of their
+// instance type AND respective object must not represent a parent class for
+// multiple instance types (e.g. DescriptorArray has a unique map, but it has
+// a subclass StrongDescriptorArray which is included into the "DescriptorArray"
+// range of instance types).
+#define UNIQUE_LEAF_INSTANCE_TYPE_MAP_LIST_GENERATOR(V, _)                     \
+  V(_, AccessorInfoMap, accessor_info_map, AccessorInfo)                       \
+  V(_, AccessorPairMap, accessor_pair_map, AccessorPair)                       \
+  V(_, AllocationMementoMap, allocation_memento_map, AllocationMemento)        \
+  V(_, ArrayBoilerplateDescriptionMap, array_boilerplate_description_map,      \
+    ArrayBoilerplateDescription)                                               \
+  V(_, BreakPointMap, break_point_map, BreakPoint)                             \
+  V(_, BreakPointInfoMap, break_point_info_map, BreakPointInfo)                \
+  V(_, BytecodeArrayMap, bytecode_array_map, BytecodeArray)                    \
+  V(_, CachedTemplateObjectMap, cached_template_object_map,                    \
+    CachedTemplateObject)                                                      \
+  V(_, CellMap, cell_map, Cell)                                                \
+  V(_, WeakCellMap, weak_cell_map, WeakCell)                                   \
+  V(_, CodeMap, code_map, Code)                                                \
+  V(_, CodeDataContainerMap, code_data_container_map, CodeDataContainer)       \
+  V(_, CoverageInfoMap, coverage_info_map, CoverageInfo)                       \
+  V(_, DebugInfoMap, debug_info_map, DebugInfo)                                \
+  V(_, FreeSpaceMap, free_space_map, FreeSpace)                                \
+  V(_, FeedbackVectorMap, feedback_vector_map, FeedbackVector)                 \
+  V(_, FixedDoubleArrayMap, fixed_double_array_map, FixedDoubleArray)          \
+  V(_, FunctionTemplateInfoMap, function_template_info_map,                    \
+    FunctionTemplateInfo)                                                      \
+  V(_, MegaDomHandlerMap, mega_dom_handler_map, MegaDomHandler)                \
+  V(_, MetaMap, meta_map, Map)                                                 \
+  V(_, PreparseDataMap, preparse_data_map, PreparseData)                       \
+  V(_, PropertyArrayMap, property_array_map, PropertyArray)                    \
+  V(_, PrototypeInfoMap, prototype_info_map, PrototypeInfo)                    \
+  V(_, SharedFunctionInfoMap, shared_function_info_map, SharedFunctionInfo)    \
+  V(_, SmallOrderedHashSetMap, small_ordered_hash_set_map,                     \
+    SmallOrderedHashSet)                                                       \
+  V(_, SmallOrderedHashMapMap, small_ordered_hash_map_map,                     \
+    SmallOrderedHashMap)                                                       \
+  V(_, SmallOrderedNameDictionaryMap, small_ordered_name_dictionary_map,       \
+    SmallOrderedNameDictionary)                                                \
+  V(_, SwissNameDictionaryMap, swiss_name_dictionary_map, SwissNameDictionary) \
+  V(_, SymbolMap, symbol_map, Symbol)                                          \
+  V(_, TransitionArrayMap, transition_array_map, TransitionArray)              \
+  V(_, Tuple2Map, tuple2_map, Tuple2)
+
+// This list must contain only maps that are shared by all objects of their
+// instance type.
+#define UNIQUE_INSTANCE_TYPE_MAP_LIST_GENERATOR(V, _)           \
+  UNIQUE_LEAF_INSTANCE_TYPE_MAP_LIST_GENERATOR(V, _)            \
+  V(_, HeapNumberMap, heap_number_map, HeapNumber)              \
+  V(_, WeakFixedArrayMap, weak_fixed_array_map, WeakFixedArray) \
+  TORQUE_DEFINED_MAP_CSA_LIST_GENERATOR(V, _)
 
 }  // namespace internal
 }  // namespace v8

@@ -11,6 +11,7 @@ const { spawnSync } = require('child_process');
 // Refs: https://github.com/nodejs/node/issues/24016
 
 if (process.argv[2] === 'child') {
+  const fs = require('fs');
   let files = fs.readdirSync(tmpdir.path);
   const plog = files.filter((name) => /\.log$/.test(name))[0];
   if (plog === undefined) {
@@ -19,20 +20,20 @@ if (process.argv[2] === 'child') {
   }
   const pingpong = `
   let counter = 0;
+  const fs = require('fs');
   const { Worker, parentPort  } = require('worker_threads');
   parentPort.on('message', (m) => {
     if (counter++ === 1024)
       process.exit(0);
-     parentPort.postMessage(
-       m.toString().split('').reverse().toString().replace(/,/g, ''));
+    parentPort.postMessage(
+      fs.readFileSync(m.toString()).slice(0, 1024 * 1024));
   });
   `;
 
   const { Worker } = require('worker_threads');
-  const data = 'x'.repeat(1024);
   const w = new Worker(pingpong, { eval: true });
   w.on('message', (m) => {
-    w.postMessage(m.toString().split('').reverse().toString().replace(/,/g, ''));
+    w.postMessage(__filename);
   });
 
   w.on('exit', common.mustCall(() => {
@@ -45,12 +46,13 @@ if (process.argv[2] === 'child') {
     }
     process.exit(0);
   }));
-  w.postMessage(data);
+  w.postMessage(__filename);
 } else {
   tmpdir.refresh();
+  const timeout = common.platformTimeout(30_000);
   const spawnResult = spawnSync(
     process.execPath, ['--prof', __filename, 'child'],
-    { cwd: tmpdir.path, encoding: 'utf8', timeout: 30_000 });
+    { cwd: tmpdir.path, encoding: 'utf8', timeout });
   assert.strictEqual(spawnResult.stderr.toString(), '',
                      `child exited with an error: \
                      ${util.inspect(spawnResult)}`);
@@ -71,7 +73,7 @@ if (process.argv[2] === 'child') {
     // Test that at least 15 ticks have been recorded for both parent and child
     // threads. When not tracking Worker threads, only 1 or 2 ticks would
     // have been recorded.
-    // When running locally on x64 Linux, this number is usually at least 200
+    // When running locally, this number is usually around 200
     // for both threads, so 15 seems like a very safe threshold.
     assert(ticks >= 15, `${ticks} >= 15`);
   }

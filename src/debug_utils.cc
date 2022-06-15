@@ -1,5 +1,6 @@
 #include "debug_utils-inl.h"  // NOLINT(build/include)
 #include "env-inl.h"
+#include "node_internals.h"
 
 #ifdef __POSIX__
 #if defined(__linux__)
@@ -53,6 +54,37 @@
 #endif  // _WIN32
 
 namespace node {
+namespace per_process {
+EnabledDebugList enabled_debug_list;
+}
+
+void EnabledDebugList::Parse(Environment* env) {
+  std::string cats;
+  credentials::SafeGetenv("NODE_DEBUG_NATIVE", &cats, env);
+  Parse(cats, true);
+}
+
+void EnabledDebugList::Parse(const std::string& cats, bool enabled) {
+  std::string debug_categories = cats;
+  while (!debug_categories.empty()) {
+    std::string::size_type comma_pos = debug_categories.find(',');
+    std::string wanted = ToLower(debug_categories.substr(0, comma_pos));
+
+#define V(name)                                                                \
+  {                                                                            \
+    static const std::string available_category = ToLower(#name);              \
+    if (available_category.find(wanted) != std::string::npos)                  \
+      set_enabled(DebugCategory::name, enabled);                               \
+  }
+
+    DEBUG_CATEGORY_NAMES(V)
+#undef V
+
+    if (comma_pos == std::string::npos) break;
+    // Use everything after the `,` as the list for the next iteration.
+    debug_categories = debug_categories.substr(comma_pos + 1);
+  }
+}
 
 #ifdef __POSIX__
 #if HAVE_EXECINFO_H
@@ -323,7 +355,7 @@ void PrintLibuvHandleInformation(uv_loop_t* loop, FILE* stream) {
     void* first_field = nullptr;
     // `handle->data` might be any value, including `nullptr`, or something
     // cast from a completely different type; therefore, check that it’s
-    // dereferencable first.
+    // dereferenceable first.
     if (sym_ctx->IsMapped(handle->data))
       first_field = *reinterpret_cast<void**>(handle->data);
 
@@ -345,7 +377,7 @@ std::vector<std::string> NativeSymbolDebuggingContext::GetLoadedLibraries() {
       [](struct dl_phdr_info* info, size_t size, void* data) {
         auto list = static_cast<std::vector<std::string>*>(data);
         if (*info->dlpi_name != '\0') {
-          list->push_back(info->dlpi_name);
+          list->emplace_back(info->dlpi_name);
         }
         return 0;
       },
@@ -354,7 +386,7 @@ std::vector<std::string> NativeSymbolDebuggingContext::GetLoadedLibraries() {
   uint32_t i = 0;
   for (const char* name = _dyld_get_image_name(i); name != nullptr;
        name = _dyld_get_image_name(++i)) {
-    list.push_back(name);
+    list.emplace_back(name);
   }
 
 #elif _AIX
@@ -379,10 +411,10 @@ std::vector<std::string> NativeSymbolDebuggingContext::GetLoadedLibraries() {
           strlen(cur_info->ldinfo_filename) + 1;
       if (*member_name != '\0') {
         str << cur_info->ldinfo_filename << "(" << member_name << ")";
-        list.push_back(str.str());
+        list.emplace_back(str.str());
         str.str("");
       } else {
-        list.push_back(cur_info->ldinfo_filename);
+        list.emplace_back(cur_info->ldinfo_filename);
       }
       buf += cur_info->ldinfo_next;
     } while (cur_info->ldinfo_next != 0);
@@ -392,7 +424,7 @@ std::vector<std::string> NativeSymbolDebuggingContext::GetLoadedLibraries() {
 
   if (dlinfo(RTLD_SELF, RTLD_DI_LINKMAP, &p) != -1) {
     for (Link_map* l = p; l != nullptr; l = l->l_next) {
-      list.push_back(l->l_name);
+      list.emplace_back(l->l_name);
     }
   }
 
@@ -427,7 +459,7 @@ std::vector<std::string> NativeSymbolDebuggingContext::GetLoadedLibraries() {
           char* str = new char[size];
           WideCharToMultiByte(
               CP_UTF8, 0, module_name, -1, str, size, nullptr, nullptr);
-          list.push_back(str);
+          list.emplace_back(str);
         }
       }
     }

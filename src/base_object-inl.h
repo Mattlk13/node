@@ -28,14 +28,7 @@
 #include "env-inl.h"
 #include "util.h"
 
-#if (__GNUC__ >= 8) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-function-type"
-#endif
 #include "v8.h"
-#if (__GNUC__ >= 8) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 namespace node {
 
@@ -43,7 +36,9 @@ BaseObject::BaseObject(Environment* env, v8::Local<v8::Object> object)
     : persistent_handle_(env->isolate(), object), env_(env) {
   CHECK_EQ(false, object.IsEmpty());
   CHECK_GT(object->InternalFieldCount(), 0);
-  object->SetAlignedPointerInInternalField(0, static_cast<void*>(this));
+  object->SetAlignedPointerInInternalField(
+      BaseObject::kSlot,
+      static_cast<void*>(this));
   env->AddCleanupHook(DeleteMe, static_cast<void*>(this));
   env->modify_base_object_count(1);
 }
@@ -67,7 +62,7 @@ BaseObject::~BaseObject() {
 
   {
     v8::HandleScope handle_scope(env()->isolate());
-    object()->SetAlignedPointerInInternalField(0, nullptr);
+    object()->SetAlignedPointerInInternalField(BaseObject::kSlot, nullptr);
   }
 }
 
@@ -88,7 +83,8 @@ v8::Local<v8::Object> BaseObject::object() const {
 v8::Local<v8::Object> BaseObject::object(v8::Isolate* isolate) const {
   v8::Local<v8::Object> handle = object();
 
-  DCHECK_EQ(handle->CreationContext()->GetIsolate(), isolate);
+  DCHECK_EQ(handle->GetCreationContext().ToLocalChecked()->GetIsolate(),
+            isolate);
   DCHECK_EQ(env()->isolate(), isolate);
 
   return handle;
@@ -98,14 +94,16 @@ Environment* BaseObject::env() const {
   return env_;
 }
 
-BaseObject* BaseObject::FromJSObject(v8::Local<v8::Object> obj) {
-  CHECK_GT(obj->InternalFieldCount(), 0);
-  return static_cast<BaseObject*>(obj->GetAlignedPointerFromInternalField(0));
+BaseObject* BaseObject::FromJSObject(v8::Local<v8::Value> value) {
+  v8::Local<v8::Object> obj = value.As<v8::Object>();
+  DCHECK_GE(obj->InternalFieldCount(), BaseObject::kSlot);
+  return static_cast<BaseObject*>(
+      obj->GetAlignedPointerFromInternalField(BaseObject::kSlot));
 }
 
 
 template <typename T>
-T* BaseObject::FromJSObject(v8::Local<v8::Object> object) {
+T* BaseObject::FromJSObject(v8::Local<v8::Value> object) {
   return static_cast<T*>(FromJSObject(object));
 }
 
@@ -142,17 +140,28 @@ void BaseObject::ClearWeak() {
   persistent_handle_.ClearWeak();
 }
 
+bool BaseObject::IsWeakOrDetached() const {
+  if (persistent_handle_.IsWeak()) return true;
+
+  if (!has_pointer_data()) return false;
+  const PointerData* pd = const_cast<BaseObject*>(this)->pointer_data();
+  return pd->wants_weak_jsobj || pd->is_detached;
+}
+
+void BaseObject::LazilyInitializedJSTemplateConstructor(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  DCHECK(args.IsConstructCall());
+  DCHECK_GT(args.This()->InternalFieldCount(), 0);
+  args.This()->SetAlignedPointerInInternalField(BaseObject::kSlot, nullptr);
+}
 
 v8::Local<v8::FunctionTemplate>
 BaseObject::MakeLazilyInitializedJSTemplate(Environment* env) {
-  auto constructor = [](const v8::FunctionCallbackInfo<v8::Value>& args) {
-    DCHECK(args.IsConstructCall());
-    DCHECK_GT(args.This()->InternalFieldCount(), 0);
-    args.This()->SetAlignedPointerInInternalField(0, nullptr);
-  };
-
-  v8::Local<v8::FunctionTemplate> t = env->NewFunctionTemplate(constructor);
-  t->InstanceTemplate()->SetInternalFieldCount(1);
+  v8::Local<v8::FunctionTemplate> t =
+      env->NewFunctionTemplate(LazilyInitializedJSTemplateConstructor);
+  t->Inherit(BaseObject::GetConstructorTemplate(env));
+  t->InstanceTemplate()->SetInternalFieldCount(
+      BaseObject::kInternalFieldCount);
   return t;
 }
 
@@ -194,7 +203,7 @@ void BaseObject::decrease_refcount() {
   unsigned int new_refcount = --metadata->strong_ptr_count;
   if (new_refcount == 0) {
     if (metadata->is_detached) {
-      delete this;
+      OnGCCollect();
     } else if (metadata->wants_weak_jsobj && !persistent_handle_.IsEmpty()) {
       MakeWeak();
     }
@@ -212,31 +221,33 @@ BaseObject::PointerData*
 BaseObjectPtrImpl<T, kIsWeak>::pointer_data() const {
   if (kIsWeak) {
     return data_.pointer_data;
-  } else {
-    if (get_base_object() == nullptr) return nullptr;
-    return get_base_object()->pointer_data();
   }
+  if (get_base_object() == nullptr) {
+    return nullptr;
+  }
+  return get_base_object()->pointer_data();
 }
 
 template <typename T, bool kIsWeak>
 BaseObject* BaseObjectPtrImpl<T, kIsWeak>::get_base_object() const {
   if (kIsWeak) {
-    if (pointer_data() == nullptr) return nullptr;
+    if (pointer_data() == nullptr) {
+      return nullptr;
+    }
     return pointer_data()->self;
-  } else {
-    return data_.target;
   }
+  return data_.target;
 }
 
 template <typename T, bool kIsWeak>
 BaseObjectPtrImpl<T, kIsWeak>::~BaseObjectPtrImpl() {
-  if (get() == nullptr) return;
   if (kIsWeak) {
-    if (--pointer_data()->weak_ptr_count == 0 &&
+    if (pointer_data() != nullptr &&
+        --pointer_data()->weak_ptr_count == 0 &&
         pointer_data()->self == nullptr) {
       delete pointer_data();
     }
-  } else {
+  } else if (get() != nullptr) {
     get()->decrease_refcount();
   }
 }
@@ -328,6 +339,20 @@ T* BaseObjectPtrImpl<T, kIsWeak>::operator->() const {
 template <typename T, bool kIsWeak>
 BaseObjectPtrImpl<T, kIsWeak>::operator bool() const {
   return get() != nullptr;
+}
+
+template <typename T, bool kIsWeak>
+template <typename U, bool kW>
+bool BaseObjectPtrImpl<T, kIsWeak>::operator ==(
+    const BaseObjectPtrImpl<U, kW>& other) const {
+  return get() == other.get();
+}
+
+template <typename T, bool kIsWeak>
+template <typename U, bool kW>
+bool BaseObjectPtrImpl<T, kIsWeak>::operator !=(
+    const BaseObjectPtrImpl<U, kW>& other) const {
+  return get() != other.get();
 }
 
 template <typename T, typename... Args>

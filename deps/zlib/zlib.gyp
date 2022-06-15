@@ -54,6 +54,7 @@
           'conditions': [
             ['OS!="win"', {
               'cflags!': [ '-ansi' ],
+              'cflags': [ '-Wno-implicit-fallthrough' ],
               'defines': [ 'HAVE_HIDDEN' ],
             }],
             ['OS=="mac" or OS=="ios" or OS=="freebsd" or OS=="android"', {
@@ -64,7 +65,7 @@
                 'USE_FILE32API'
               ],
             }],
-            ['(target_arch in "ia32 x64 x32" and OS!="ios") or arm_fpu=="neon"', {
+            ['(target_arch in "ia32 x64" and OS!="ios") or arm_fpu=="neon"', {
               'sources': [
                 'adler32_simd.c',
                 'adler32_simd.h',
@@ -77,7 +78,7 @@
               'sources': [ 'inflate.c', ],
             }],
             # Incorporate optimizations where possible
-            ['target_arch in "ia32 x64 x32" and OS!="ios"', {
+            ['target_arch in "ia32 x64" and OS!="ios"', {
               'defines': [
                 'ADLER32_SIMD_SSSE3',
                 'INFLATE_CHUNK_SIMD_SSE2',
@@ -91,20 +92,6 @@
                 'x86.c',
               ],
               'conditions': [
-                ['OS!="win" or llvm_version!="0.0"', {
-                  'cflags': [
-                    '-mssse3',
-                    '-msse4.2',
-                    '-mpclmul',
-                  ],
-                  'xcode_settings': {
-                    'OTHER_CFLAGS': [
-                      '-mssse3',
-                      '-msse4.2',
-                      '-mpclmul',
-                    ],
-                  },
-                }],
                 ['target_arch=="x64"', {
                   'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
                 }],
@@ -136,7 +123,7 @@
                     ['OS=="linux"', {
                       'defines': [ 'ARMV8_OS_LINUX' ],
                     }],
-                    ['OS="win"', {
+                    ['OS=="win"', {
                       'defines': [ 'ARMV8_OS_WINDOWS' ],
                     }],
                     ['OS!="android" and OS!="win" and llvm_version=="0.0"', {

@@ -5,6 +5,7 @@
 #ifndef V8_COMPILER_MEMORY_OPTIMIZER_H_
 #define V8_COMPILER_MEMORY_OPTIMIZER_H_
 
+#include "src/compiler/graph-assembler.h"
 #include "src/compiler/memory-lowering.h"
 #include "src/zone/zone-containers.h"
 
@@ -29,7 +30,6 @@ using NodeId = uint32_t;
 class MemoryOptimizer final {
  public:
   MemoryOptimizer(JSGraph* jsgraph, Zone* zone,
-                  PoisoningMitigationLevel poisoning_level,
                   MemoryLowering::AllocationFolding allocation_folding,
                   const char* function_debug_name, TickCounter* tick_counter);
   ~MemoryOptimizer() = default;
@@ -67,6 +67,8 @@ class MemoryOptimizer final {
   void EnqueueUses(Node*, AllocationState const*);
   void EnqueueUse(Node*, int, AllocationState const*);
 
+  void ReplaceUsesAndKillNode(Node* node, Node* replacement);
+
   // Returns true if the AllocationType of the current AllocateRaw node that we
   // are visiting needs to be updated to kOld, due to propagation of tenuring
   // from outer to inner allocations.
@@ -78,6 +80,7 @@ class MemoryOptimizer final {
   JSGraph* jsgraph() const { return jsgraph_; }
   Zone* zone() const { return zone_; }
 
+  JSGraphAssembler graph_assembler_;
   MemoryLowering memory_lowering_;
   JSGraph* jsgraph_;
   AllocationState const* const empty_state_;

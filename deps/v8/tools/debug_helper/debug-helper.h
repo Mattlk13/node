@@ -66,10 +66,17 @@ enum class PropertyKind {
   kArrayOfUnknownSizeDueToValidButInaccessibleMemory,
 };
 
-struct ObjectProperty {
+struct PropertyBase {
   const char* name;
 
-  // Statically-determined type, such as from .tq definition.
+  // Statically-determined type, such as from .tq definition. Can be an empty
+  // string if this property is itself a Torque-defined struct; in that case use
+  // |struct_fields| instead. This type should be treated as if it were used in
+  // the v8::internal namespace; that is, type "X::Y" can mean any of the
+  // following, in order of decreasing preference:
+  // - v8::internal::X::Y
+  // - v8::X::Y
+  // - X::Y
   const char* type;
 
   // In some cases, |type| may be a simple type representing a compressed
@@ -79,7 +86,22 @@ struct ObjectProperty {
   // to pass the |decompressed_type| value as the type_hint on a subsequent call
   // to GetObjectProperties.
   const char* decompressed_type;
+};
 
+struct StructProperty : public PropertyBase {
+  // The offset from the beginning of the struct to this field.
+  size_t offset;
+
+  // The number of bits that are present, if this value is a bitfield. Zero
+  // indicates that this value is not a bitfield (the full value is stored).
+  uint8_t num_bits;
+
+  // The number of bits by which this value has been left-shifted for storage as
+  // a bitfield.
+  uint8_t shift_bits;
+};
+
+struct ObjectProperty : public PropertyBase {
   // The address where the property value can be found in the debuggee's address
   // space, or the address of the first value for an array.
   uintptr_t address;
@@ -89,6 +111,17 @@ struct ObjectProperty {
   // semantic difference between num_values=1 and kind=kSingle (normal property)
   // versus num_values=1 and kind=kArrayOfKnownSize (one-element array).
   size_t num_values;
+
+  // The number of bytes occupied by a single instance of the value type for
+  // this property. This can also be used as the array stride because arrays are
+  // tightly packed like in C.
+  size_t size;
+
+  // If the property is a struct made up of several pieces of data packed
+  // together, then the |struct_fields| array contains descriptions of those
+  // fields.
+  size_t num_struct_fields;
+  StructProperty** struct_fields;
 
   PropertyKind kind;
 };
@@ -111,10 +144,15 @@ struct ObjectPropertiesResult {
   const char** guessed_types;
 };
 
+struct StackFrameResult {
+  size_t num_properties;
+  ObjectProperty** properties;
+};
+
 // Copies byte_count bytes of memory from the given address in the debuggee to
 // the destination buffer.
 typedef MemoryAccessResult (*MemoryAccessor)(uintptr_t address,
-                                             uint8_t* destination,
+                                             void* destination,
                                              size_t byte_count);
 
 // Additional data that can help GetObjectProperties to be more accurate. Any
@@ -141,6 +179,12 @@ struct HeapAddresses {
   uintptr_t any_heap_pointer;
 };
 
+// Result type for ListObjectClasses.
+struct ClassList {
+  size_t num_class_names;
+  const char* const* class_names;  // Fully qualified class names.
+};
+
 }  // namespace debug_helper
 }  // namespace v8
 
@@ -154,6 +198,15 @@ _v8_debug_helper_GetObjectProperties(
     const char* type_hint);
 V8_DEBUG_HELPER_EXPORT void _v8_debug_helper_Free_ObjectPropertiesResult(
     v8::debug_helper::ObjectPropertiesResult* result);
+V8_DEBUG_HELPER_EXPORT v8::debug_helper::StackFrameResult*
+_v8_debug_helper_GetStackFrame(
+    uintptr_t frame_pointer, v8::debug_helper::MemoryAccessor memory_accessor);
+V8_DEBUG_HELPER_EXPORT void _v8_debug_helper_Free_StackFrameResult(
+    v8::debug_helper::StackFrameResult* result);
+V8_DEBUG_HELPER_EXPORT const v8::debug_helper::ClassList*
+_v8_debug_helper_ListObjectClasses();
+V8_DEBUG_HELPER_EXPORT const char* _v8_debug_helper_BitsetName(
+    uint64_t payload);
 }
 
 namespace v8 {
@@ -181,6 +234,31 @@ inline ObjectPropertiesResultPtr GetObjectProperties(
     const HeapAddresses& heap_addresses, const char* type_hint = nullptr) {
   return ObjectPropertiesResultPtr(_v8_debug_helper_GetObjectProperties(
       object, memory_accessor, heap_addresses, type_hint));
+}
+
+// Get a list of all class names deriving from v8::internal::Object.
+inline const ClassList* ListObjectClasses() {
+  return _v8_debug_helper_ListObjectClasses();
+}
+
+// Return a bitset name for a v8::internal::compiler::Type with payload or null
+// if the payload is not a bitset.
+inline const char* BitsetName(uint64_t payload) {
+  return _v8_debug_helper_BitsetName(payload);
+}
+
+struct DebugHelperStackFrameResultDeleter {
+  void operator()(v8::debug_helper::StackFrameResult* ptr) {
+    _v8_debug_helper_Free_StackFrameResult(ptr);
+  }
+};
+using StackFrameResultPtr =
+    std::unique_ptr<StackFrameResult, DebugHelperStackFrameResultDeleter>;
+
+inline StackFrameResultPtr GetStackFrame(
+    uintptr_t frame_pointer, v8::debug_helper::MemoryAccessor memory_accessor) {
+  return StackFrameResultPtr(
+      _v8_debug_helper_GetStackFrame(frame_pointer, memory_accessor));
 }
 
 }  // namespace debug_helper

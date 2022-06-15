@@ -457,9 +457,17 @@ Maybe<bool> SyncProcessRunner::TryInitializeAndRunLoop(Local<Value> options) {
     SetError(UV_ENOMEM);
     return Just(false);
   }
-  CHECK_EQ(uv_loop_init(uv_loop_), 0);
+
+  r = uv_loop_init(uv_loop_);
+  if (r < 0) {
+    delete uv_loop_;
+    uv_loop_ = nullptr;
+    SetError(r);
+    return Just(false);
+  }
 
   if (!ParseOptions(options).To(&r)) return Nothing<bool>();
+
   if (r < 0) {
     SetError(r);
     return Just(false);
@@ -607,8 +615,9 @@ void SyncProcessRunner::Kill() {
     if (r < 0 && r != UV_ESRCH) {
       SetError(r);
 
-      r = uv_process_kill(&uv_process_, SIGKILL);
-      CHECK(r >= 0 || r == UV_ESRCH);
+      // Deliberately ignore the return value, we might not have
+      // sufficient privileges to signal the child process.
+      USE(uv_process_kill(&uv_process_, SIGKILL));
     }
   }
 
@@ -694,8 +703,7 @@ Local<Object> SyncProcessRunner::BuildResultObject() {
   if (term_signal_ > 0)
     js_result->Set(context, env()->signal_string(),
                    String::NewFromUtf8(env()->isolate(),
-                                       signo_string(term_signal_),
-                                       v8::NewStringType::kNormal)
+                                       signo_string(term_signal_))
                        .ToLocalChecked())
         .Check();
   else
@@ -801,6 +809,9 @@ Maybe<int> SyncProcessRunner::ParseOptions(Local<Value> js_value) {
       js_options->Get(context, env()->windows_hide_string()).ToLocalChecked();
   if (js_win_hide->BooleanValue(isolate))
     uv_process_options_.flags |= UV_PROCESS_WINDOWS_HIDE;
+
+  if (env()->hide_console_windows())
+    uv_process_options_.flags |= UV_PROCESS_WINDOWS_HIDE_CONSOLE;
 
   Local<Value> js_wva =
       js_options->Get(context, env()->windows_verbatim_arguments_string())
@@ -1039,8 +1050,7 @@ Maybe<int> SyncProcessRunner::CopyJsStringArray(Local<Value> js_value,
       js_array
           ->Set(context,
                 i,
-                value->ToString(env()->isolate()->GetCurrentContext())
-                    .ToLocalChecked())
+                string)
           .Check();
     }
 

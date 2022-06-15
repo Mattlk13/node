@@ -6,6 +6,7 @@
 #endif /* _WIN32 */
 
 #include "uv.h"
+#include "clocks.h"
 #include "wasi_types.h"
 #include "uv_mapping.h"
 
@@ -36,12 +37,12 @@
       );                                                                      \
     }                                                                         \
                                                                               \
-    (time) = (((sys_system.wHour * 3600) + (sys_system.wMinute * 60) +        \
-              sys_system.wSecond) * NANOS_PER_SEC) +                          \
-             (sys_system.wMilliseconds * 1000000) +                           \
-             (((sys_user.wHour * 3600) + (sys_user.wMinute * 60) +            \
-              sys_user.wSecond) * NANOS_PER_SEC) +                            \
-             (sys_user.wMilliseconds * 1000000);                              \
+    (time) = (((uvwasi_timestamp_t)(sys_system.wHour * 3600) +                \
+              (sys_system.wMinute * 60) + sys_system.wSecond) * NANOS_PER_SEC) + \
+             ((uvwasi_timestamp_t)(sys_system.wMilliseconds) * 1000000) +     \
+             (((uvwasi_timestamp_t)(sys_user.wHour * 3600) +                  \
+              (sys_user.wMinute * 60) + sys_user.wSecond) * NANOS_PER_SEC) +  \
+             ((uvwasi_timestamp_t)(sys_user.wMilliseconds) * 1000000);        \
     return UVWASI_ESUCCESS;                                                   \
   } while (0)
 
@@ -51,7 +52,7 @@
     struct timespec ts;                                                       \
     if (0 != clock_gettime((clk), &ts))                                       \
       return uvwasi__translate_uv_error(uv_translate_sys_error(errno));       \
-    (time) = (ts.tv_sec * NANOS_PER_SEC) + ts.tv_nsec;                        \
+    (time) = ((uvwasi_timestamp_t)(ts.tv_sec) * NANOS_PER_SEC) + ts.tv_nsec;  \
     return UVWASI_ESUCCESS;                                                   \
   } while (0)
 
@@ -61,9 +62,9 @@
     struct rusage ru;                                                         \
     if (0 != getrusage((who), &ru))                                           \
       return uvwasi__translate_uv_error(uv_translate_sys_error(errno));       \
-    (time) = (ru.ru_utime.tv_sec * NANOS_PER_SEC) +                           \
+    (time) = ((uvwasi_timestamp_t)(ru.ru_utime.tv_sec) * NANOS_PER_SEC) +     \
              (ru.ru_utime.tv_usec * 1000) +                                   \
-             (ru.ru_stime.tv_sec * NANOS_PER_SEC) +                           \
+             ((uvwasi_timestamp_t)(ru.ru_stime.tv_sec) * NANOS_PER_SEC) +     \
              (ru.ru_stime.tv_usec * 1000);                                    \
     return UVWASI_ESUCCESS;                                                   \
   } while (0)
@@ -82,9 +83,9 @@
                                     &count)) {                                \
       return UVWASI_ENOSYS;                                                   \
     }                                                                         \
-    (time) = (info.user_time.seconds * NANOS_PER_SEC) +                       \
+    (time) = ((uvwasi_timestamp_t)(info.user_time.seconds) * NANOS_PER_SEC) + \
              (info.user_time.microseconds * 1000) +                           \
-             (info.system_time.seconds * NANOS_PER_SEC) +                     \
+             ((uvwasi_timestamp_t)(info.system_time.seconds) * NANOS_PER_SEC) + \
              (info.system_time.microseconds * 1000);                          \
     return UVWASI_ESUCCESS;                                                   \
   } while (0)
@@ -108,7 +109,7 @@
     if (0 != clock_getres((clk), &ts))                                        \
       (time) = 1000000;                                                       \
     else                                                                      \
-      (time) = (ts.tv_sec * NANOS_PER_SEC) + ts.tv_nsec;                      \
+      (time) = ((uvwasi_timestamp_t)(ts.tv_sec) * NANOS_PER_SEC) + ts.tv_nsec; \
     return UVWASI_ESUCCESS;                                                   \
   } while (0)
 
@@ -152,7 +153,7 @@ uvwasi_errno_t uvwasi__clock_gettime_thread_cputime(uvwasi_timestamp_t* time) {
   UVWASI__WIN_TIME_AND_RETURN(GetCurrentThread(), *time);
 #elif defined(__APPLE__)
   UVWASI__OSX_THREADTIME_AND_RETURN(*time);
-#elif defined(CLOCK_THREAD_CPUTIME_ID) && !defined(__sun)
+#elif defined(CLOCK_THREAD_CPUTIME_ID) && !defined(__sun) && !defined(__PASE__)
   UVWASI__CLOCK_GETTIME_AND_RETURN(CLOCK_THREAD_CPUTIME_ID, *time);
 #else
 # if defined(RUSAGE_LWP)
@@ -184,7 +185,7 @@ uvwasi_errno_t uvwasi__clock_getres_thread_cputime(uvwasi_timestamp_t* time) {
   UVWASI__WIN_GETRES_AND_RETURN(*time);
 #elif defined(__APPLE__)
   UVWASI__SLOW_GETRES_AND_RETURN(*time);
-#elif defined(CLOCK_THREAD_CPUTIME_ID) && !defined(__sun)
+#elif defined(CLOCK_THREAD_CPUTIME_ID) && !defined(__sun) && !defined(__PASE__)
   UVWASI__CLOCK_GETTIME_AND_RETURN(CLOCK_THREAD_CPUTIME_ID, *time);
 #elif defined(RUSAGE_THREAD) || defined(RUSAGE_LWP)
   UVWASI__SLOW_GETRES_AND_RETURN(*time);

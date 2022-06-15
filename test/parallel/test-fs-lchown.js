@@ -46,7 +46,7 @@ const { promises } = fs;
 [false, 1, 'test', {}, [], null, undefined].forEach((i) => {
   assert.throws(() => fs.lchown('not_a_file_that_exists', 1, 1, i), {
     name: 'TypeError',
-    code: 'ERR_INVALID_CALLBACK'
+    code: 'ERR_INVALID_ARG_TYPE'
   });
 });
 
@@ -58,8 +58,7 @@ if (!common.isWindows) {
   tmpdir.refresh();
   fs.copyFileSync(__filename, testFile);
   fs.lchownSync(testFile, uid, gid);
-  fs.lchown(testFile, uid, gid, common.mustCall(async (err) => {
-    assert.ifError(err);
+  fs.lchown(testFile, uid, gid, common.mustSucceed(async (err) => {
     await promises.lchown(testFile, uid, gid);
   }));
 }

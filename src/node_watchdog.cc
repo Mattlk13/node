@@ -34,6 +34,7 @@ namespace node {
 using v8::Context;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
+using v8::Local;
 using v8::Object;
 using v8::Value;
 
@@ -121,20 +122,14 @@ SignalPropagation SigintWatchdog::HandleSigint() {
 
 void TraceSigintWatchdog::Init(Environment* env, Local<Object> target) {
   Local<FunctionTemplate> constructor = env->NewFunctionTemplate(New);
-  constructor->InstanceTemplate()->SetInternalFieldCount(1);
-  Local<v8::String> js_sigint_watch_dog =
-      FIXED_ONE_BYTE_STRING(env->isolate(), "TraceSigintWatchdog");
-  constructor->SetClassName(js_sigint_watch_dog);
+  constructor->InstanceTemplate()->SetInternalFieldCount(
+      TraceSigintWatchdog::kInternalFieldCount);
   constructor->Inherit(HandleWrap::GetConstructorTemplate(env));
 
   env->SetProtoMethod(constructor, "start", Start);
   env->SetProtoMethod(constructor, "stop", Stop);
 
-  target
-      ->Set(env->context(),
-            js_sigint_watch_dog,
-            constructor->GetFunction(env->context()).ToLocalChecked())
-      .Check();
+  env->SetConstructorFunction(target, "TraceSigintWatchdog", constructor);
 }
 
 void TraceSigintWatchdog::New(const FunctionCallbackInfo<Value>& args) {
@@ -431,4 +426,4 @@ static void Initialize(Local<Object> target,
 
 }  // namespace node
 
-NODE_MODULE_CONTEXT_AWARE_INTERNAL(watchdog, node::watchdog::Initialize);
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(watchdog, node::watchdog::Initialize)

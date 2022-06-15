@@ -18,12 +18,13 @@ class ArrayBuiltinsAssembler : public CodeStubAssembler {
       std::function<void(ArrayBuiltinsAssembler* masm)>;
 
   using CallResultProcessor = std::function<TNode<Object>(
-      ArrayBuiltinsAssembler* masm, TNode<Object> k_value, TNode<Object> k)>;
+      ArrayBuiltinsAssembler* masm, TNode<Object> k_value, TNode<UintPtrT> k)>;
 
   void TypedArrayMapResultGenerator();
 
   // See tc39.github.io/ecma262/#sec-%typedarray%.prototype.map.
-  TNode<Object> TypedArrayMapProcessor(TNode<Object> k_value, TNode<Object> k);
+  TNode<Object> TypedArrayMapProcessor(TNode<Object> k_value,
+                                       TNode<UintPtrT> k);
 
   TNode<String> CallJSArrayArrayJoinConcatToSequentialString(
       TNode<FixedArray> fixed_array, TNode<IntPtrT> length, TNode<String> sep,
@@ -47,10 +48,10 @@ class ArrayBuiltinsAssembler : public CodeStubAssembler {
   TNode<Object> receiver() { return receiver_; }
   TNode<IntPtrT> argc() { return argc_; }
   TNode<JSReceiver> o() { return o_; }
-  TNode<Number> len() { return len_; }
+  TNode<UintPtrT> len() { return len_; }
   TNode<Object> callbackfn() { return callbackfn_; }
   TNode<Object> this_arg() { return this_arg_; }
-  TNode<Number> k() { return k_.value(); }
+  TNode<UintPtrT> k() { return k_.value(); }
   TNode<Object> a() { return a_.value(); }
 
   void ReturnFromBuiltin(TNode<Object> value);
@@ -71,20 +72,20 @@ class ArrayBuiltinsAssembler : public CodeStubAssembler {
       TNode<JSFunction> target, TNode<HeapObject> allocation_site_or_undefined,
       TNode<Int32T> argc);
 
-  void GenerateDispatchToArrayStub(TNode<Context> context,
-                                   TNode<JSFunction> target, TNode<Int32T> argc,
-                                   AllocationSiteOverrideMode mode,
-                                   TNode<AllocationSite> allocation_site = {});
+  void GenerateDispatchToArrayStub(
+      TNode<Context> context, TNode<JSFunction> target, TNode<Int32T> argc,
+      AllocationSiteOverrideMode mode,
+      base::Optional<TNode<AllocationSite>> allocation_site = base::nullopt);
 
   void CreateArrayDispatchNoArgument(
       TNode<Context> context, TNode<JSFunction> target, TNode<Int32T> argc,
       AllocationSiteOverrideMode mode,
-      TNode<AllocationSite> allocation_site = {});
+      base::Optional<TNode<AllocationSite>> allocation_site);
 
   void CreateArrayDispatchSingleArgument(
       TNode<Context> context, TNode<JSFunction> target, TNode<Int32T> argc,
       AllocationSiteOverrideMode mode,
-      TNode<AllocationSite> allocation_site = {});
+      base::Optional<TNode<AllocationSite>> allocation_site);
 
   void GenerateConstructor(TNode<Context> context,
                            TNode<HeapObject> array_function,
@@ -103,19 +104,20 @@ class ArrayBuiltinsAssembler : public CodeStubAssembler {
  private:
   void VisitAllTypedArrayElements(TNode<JSArrayBuffer> array_buffer,
                                   const CallResultProcessor& processor,
-                                  Label* detached, ForEachDirection direction,
-                                  TNode<JSTypedArray> typed_array);
+                                  ForEachDirection direction,
+                                  TNode<JSTypedArray> typed_array,
+                                  bool can_shrink);
 
   TNode<Object> callbackfn_;
   TNode<JSReceiver> o_;
   TNode<Object> this_arg_;
-  TNode<Number> len_;
+  TNode<UintPtrT> len_;
   TNode<Context> context_;
   TNode<Object> receiver_;
   TNode<IntPtrT> argc_;
   TNode<BoolT> fast_typed_array_target_;
   const char* name_ = nullptr;
-  TVariable<Number> k_;
+  TVariable<UintPtrT> k_;
   TVariable<Object> a_;
   Label fully_spec_compliant_;
   ElementsKind source_elements_kind_ = ElementsKind::NO_ELEMENTS;

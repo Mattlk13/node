@@ -30,25 +30,30 @@ if (process.argv[2] === 'wasi-child') {
     const { instance } = await WebAssembly.instantiate(buffer, importObject);
 
     wasi.start(instance);
-  })();
+  })().then(common.mustCall());
 } else {
   const assert = require('assert');
   const cp = require('child_process');
-  const { EOL } = require('os');
+  const { checkoutEOL } = common;
 
   function runWASI(options) {
     console.log('executing', options.test);
-    const opts = { env: { ...process.env, NODE_DEBUG_NATIVE: 'wasi' } };
+    const opts = {
+      env: {
+        ...process.env,
+        NODE_DEBUG_NATIVE: 'wasi',
+        NODE_PLATFORM: process.platform
+      }
+    };
 
     if (options.stdin !== undefined)
       opts.input = options.stdin;
 
     const child = cp.spawnSync(process.execPath, [
       '--experimental-wasi-unstable-preview1',
-      '--experimental-wasm-bigint',
       __filename,
       'wasi-child',
-      options.test
+      options.test,
     ], opts);
     console.log(child.stderr.toString());
     assert.strictEqual(child.status, options.exitCode || 0);
@@ -57,21 +62,35 @@ if (process.argv[2] === 'wasi-child') {
   }
 
   runWASI({ test: 'cant_dotdot' });
-  runWASI({ test: 'clock_getres' });
+
+  // Tests that are currently unsupported on IBM i PASE.
+  if (!common.isIBMi) {
+    runWASI({ test: 'clock_getres' });
+  }
   runWASI({ test: 'exitcode', exitCode: 120 });
   runWASI({ test: 'fd_prestat_get_refresh' });
-  runWASI({ test: 'freopen', stdout: `hello from input2.txt${EOL}` });
+  runWASI({ test: 'freopen', stdout: `hello from input2.txt${checkoutEOL}` });
+  runWASI({ test: 'ftruncate' });
   runWASI({ test: 'getentropy' });
-  runWASI({ test: 'getrusage' });
+
+  // Tests that are currently unsupported on IBM i PASE.
+  if (!common.isIBMi) {
+    runWASI({ test: 'getrusage' });
+  }
   runWASI({ test: 'gettimeofday' });
   runWASI({ test: 'main_args' });
   runWASI({ test: 'notdir' });
-  // runWASI({ test: 'poll' });
+  runWASI({ test: 'poll' });
   runWASI({ test: 'preopen_populates' });
-  runWASI({ test: 'read_file', stdout: `hello from input.txt${EOL}` });
+
+  if (!common.isWindows && process.platform !== 'android') {
+    runWASI({ test: 'readdir' });
+  }
+
+  runWASI({ test: 'read_file', stdout: `hello from input.txt${checkoutEOL}` });
   runWASI({
     test: 'read_file_twice',
-    stdout: `hello from input.txt${EOL}hello from input.txt${EOL}`
+    stdout: `hello from input.txt${checkoutEOL}hello from input.txt${checkoutEOL}`
   });
   runWASI({ test: 'stat' });
   runWASI({ test: 'write_file' });

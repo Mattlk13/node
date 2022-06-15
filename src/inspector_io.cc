@@ -3,10 +3,10 @@
 #include "inspector_socket_server.h"
 #include "inspector/main_thread_interface.h"
 #include "inspector/node_string.h"
+#include "crypto/crypto_util.h"
 #include "base_object-inl.h"
 #include "debug_utils-inl.h"
 #include "node.h"
-#include "node_crypto.h"
 #include "node_internals.h"
 #include "node_mutex.h"
 #include "v8-inspector.h"
@@ -209,7 +209,7 @@ class IoSessionDelegate : public InspectorSessionDelegate {
 class InspectorIoDelegate: public node::inspector::SocketServerDelegate {
  public:
   InspectorIoDelegate(std::shared_ptr<RequestQueueData> queue,
-                      std::shared_ptr<MainThreadHandle> main_threade,
+                      std::shared_ptr<MainThreadHandle> main_thread,
                       const std::string& target_id,
                       const std::string& script_path,
                       const std::string& script_name);

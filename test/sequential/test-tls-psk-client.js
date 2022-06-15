@@ -33,10 +33,11 @@ const cleanUp = (err) => {
   process.exitCode = err ? 1 : 0;
 };
 
-const timeout = setTimeout(() => cleanUp('Timeouted'), 5000);
+const timeout = setTimeout(() => cleanUp('Timed out'), 5000);
 
 function waitForPort(port, cb) {
   const socket = net.connect(common.PORT, () => {
+    socket.on('data', () => {});
     socket.end();
     socket.on('end', cb);
   });

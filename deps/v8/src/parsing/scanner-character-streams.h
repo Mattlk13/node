@@ -7,7 +7,7 @@
 
 #include <memory>
 
-#include "include/v8.h"  // for v8::ScriptCompiler
+#include "include/v8-script.h"  // for v8::ScriptCompiler
 #include "src/common/globals.h"
 
 namespace v8 {
@@ -30,6 +30,8 @@ class V8_EXPORT_PRIVATE ScannerStream {
 
   static std::unique_ptr<Utf16CharacterStream> ForTesting(const char* data);
   static std::unique_ptr<Utf16CharacterStream> ForTesting(const char* data,
+                                                          size_t length);
+  static std::unique_ptr<Utf16CharacterStream> ForTesting(const uint16_t* data,
                                                           size_t length);
 };
 

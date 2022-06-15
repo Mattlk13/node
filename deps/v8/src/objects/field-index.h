@@ -31,7 +31,7 @@ class FieldIndex final {
   static inline FieldIndex ForInObjectOffset(int offset, Encoding encoding);
   static inline FieldIndex ForDescriptor(Map map,
                                          InternalIndex descriptor_index);
-  static inline FieldIndex ForDescriptor(Isolate* isolate, Map map,
+  static inline FieldIndex ForDescriptor(PtrComprCageBase cage_base, Map map,
                                          InternalIndex descriptor_index);
 
   inline int GetLoadByFieldIndex() const;
@@ -41,6 +41,8 @@ class FieldIndex final {
   bool is_double() const { return EncodingBits::decode(bit_field_) == kDouble; }
 
   int offset() const { return OffsetBits::decode(bit_field_); }
+
+  uint64_t bit_field() const { return bit_field_; }
 
   // Zero-indexed from beginning of the object.
   int index() const {
@@ -110,7 +112,7 @@ class FieldIndex final {
       (kDescriptorIndexBitCount + 1 + kTaggedSizeLog2);
 
   // Index from beginning of object.
-  using OffsetBits = BitField64<int, 0, kOffsetBitsSize>;
+  using OffsetBits = base::BitField64<int, 0, kOffsetBitsSize>;
   using IsInObjectBits = OffsetBits::Next<bool, 1>;
   using EncodingBits = IsInObjectBits::Next<Encoding, 2>;
   // Number of inobject properties.

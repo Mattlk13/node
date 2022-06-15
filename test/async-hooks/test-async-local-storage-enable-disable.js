@@ -5,16 +5,27 @@ const { AsyncLocalStorage } = require('async_hooks');
 
 const asyncLocalStorage = new AsyncLocalStorage();
 
-asyncLocalStorage.runSyncAndReturn(() => {
+asyncLocalStorage.run(new Map(), () => {
   asyncLocalStorage.getStore().set('foo', 'bar');
   process.nextTick(() => {
     assert.strictEqual(asyncLocalStorage.getStore().get('foo'), 'bar');
-    asyncLocalStorage.disable();
-    assert.strictEqual(asyncLocalStorage.getStore(), undefined);
     process.nextTick(() => {
       assert.strictEqual(asyncLocalStorage.getStore(), undefined);
-      asyncLocalStorage.runSyncAndReturn(() => {
-        assert.notStrictEqual(asyncLocalStorage.getStore(), undefined);
+    });
+
+    asyncLocalStorage.disable();
+    assert.strictEqual(asyncLocalStorage.getStore(), undefined);
+
+    // Calls to exit() should not mess with enabled status
+    asyncLocalStorage.exit(() => {
+      assert.strictEqual(asyncLocalStorage.getStore(), undefined);
+    });
+    assert.strictEqual(asyncLocalStorage.getStore(), undefined);
+
+    process.nextTick(() => {
+      assert.strictEqual(asyncLocalStorage.getStore(), undefined);
+      asyncLocalStorage.run(new Map().set('bar', 'foo'), () => {
+        assert.strictEqual(asyncLocalStorage.getStore().get('bar'), 'foo');
       });
     });
   });

@@ -16,15 +16,13 @@
 namespace v8 {
 namespace internal {
 
+#include "torque-generated/src/objects/js-collection-iterator-tq.inc"
+
 class JSCollectionIterator
     : public TorqueGeneratedJSCollectionIterator<JSCollectionIterator,
                                                  JSObject> {
  public:
   void JSCollectionIteratorPrint(std::ostream& os, const char* name);
-
-  // JSCollectionIterator is abstract, but also defines the size for all of its
-  // concrete subclasses.
-  static constexpr int kSize = kHeaderSize;
 
   TQ_OBJECT_CONSTRUCTORS(JSCollectionIterator)
 };

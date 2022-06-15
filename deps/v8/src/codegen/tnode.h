@@ -13,12 +13,14 @@ namespace internal {
 class HeapNumber;
 class BigInt;
 class Object;
+class Smi;
+class TaggedIndex;
 
 namespace compiler {
 
 class Node;
 
-}
+}  // namespace compiler
 
 struct UntaggedT {};
 
@@ -26,12 +28,16 @@ struct IntegralT : UntaggedT {};
 
 struct WordT : IntegralT {
   static const MachineRepresentation kMachineRepresentation =
-      (kSystemPointerSize == 4) ? MachineRepresentation::kWord32
-                                : MachineRepresentation::kWord64;
+      MachineType::PointerRepresentation();
 };
 
 struct RawPtrT : WordT {
   static constexpr MachineType kMachineType = MachineType::Pointer();
+};
+
+// A RawPtrT that is guaranteed to point into the sandbox.
+struct SandboxedPtrT : WordT {
+  static constexpr MachineType kMachineType = MachineType::SandboxedPointer();
 };
 
 template <class To>
@@ -78,6 +84,17 @@ struct UintPtrT : WordT {
   static constexpr MachineType kMachineType = MachineType::UintPtr();
 };
 
+// An index into the external pointer table.
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
+struct ExternalPointerT : Uint32T {
+  static constexpr MachineType kMachineType = MachineType::Uint32();
+};
+#else
+struct ExternalPointerT : UntaggedT {
+  static constexpr MachineType kMachineType = MachineType::Pointer();
+};
+#endif
+
 struct Float32T : UntaggedT {
   static const MachineRepresentation kMachineRepresentation =
       MachineRepresentation::kFloat32;
@@ -102,6 +119,16 @@ struct BoolT : Word32T {};
 // Value type of a Turbofan node with two results.
 template <class T1, class T2>
 struct PairT {};
+
+struct Simd128T : UntaggedT {
+  static const MachineRepresentation kMachineRepresentation =
+      MachineRepresentation::kSimd128;
+  static constexpr MachineType kMachineType = MachineType::Simd128();
+};
+
+struct I8x16T : Simd128T {};
+struct I16x8T : Simd128T {};
+struct I32x2T : Simd128T {};
 
 inline constexpr MachineType CommonMachineType(MachineType type1,
                                                MachineType type2) {
@@ -131,11 +158,19 @@ template <>
 struct MachineTypeOf<Smi> {
   static constexpr MachineType value = MachineType::TaggedSigned();
 };
+template <>
+struct MachineTypeOf<TaggedIndex> {
+  static constexpr MachineType value = MachineType::Pointer();
+};
 template <class HeapObjectSubtype>
 struct MachineTypeOf<HeapObjectSubtype,
                      typename std::enable_if<std::is_base_of<
                          HeapObject, HeapObjectSubtype>::value>::type> {
   static constexpr MachineType value = MachineType::TaggedPointer();
+};
+template <>
+struct MachineTypeOf<ExternalReference> {
+  static constexpr MachineType value = MachineType::Pointer();
 };
 
 template <class HeapObjectSubtype>
@@ -146,6 +181,12 @@ constexpr MachineType MachineTypeOf<
 template <class Type, class Enable = void>
 struct MachineRepresentationOf {
   static const MachineRepresentation value = Type::kMachineRepresentation;
+};
+// If T defines kMachineType, then we take the machine representation from
+// there.
+template <class T>
+struct MachineRepresentationOf<T, std::void_t<decltype(T::kMachineType)>> {
+  static const MachineRepresentation value = T::kMachineType.representation();
 };
 template <class T>
 struct MachineRepresentationOf<
@@ -163,6 +204,16 @@ template <>
 struct MachineRepresentationOf<ExternalReference> {
   static const MachineRepresentation value = RawPtrT::kMachineRepresentation;
 };
+
+template <typename T>
+constexpr bool IsMachineRepresentationOf(MachineRepresentation r) {
+  return MachineRepresentationOf<T>::value == r;
+}
+
+template <class T>
+constexpr MachineRepresentation PhiMachineRepresentationOf =
+    std::is_base_of<Word32T, T>::value ? MachineRepresentation::kWord32
+                                       : MachineRepresentationOf<T>::value;
 
 template <class T>
 struct is_valid_type_tag {
@@ -207,31 +258,16 @@ struct UnionT {
 using AnyTaggedT = UnionT<Object, MaybeObject>;
 using Number = UnionT<Smi, HeapNumber>;
 using Numeric = UnionT<Number, BigInt>;
+using ContextOrEmptyContext = UnionT<Context, Smi>;
 
 // A pointer to a builtin function, used by Torque's function pointers.
 using BuiltinPtr = Smi;
 
-class int31_t {
- public:
-  int31_t() : value_(0) {}
-  int31_t(int value) : value_(value) {  // NOLINT(runtime/explicit)
-    DCHECK_EQ((value & 0x80000000) != 0, (value & 0x40000000) != 0);
-  }
-  int31_t& operator=(int value) {
-    DCHECK_EQ((value & 0x80000000) != 0, (value & 0x40000000) != 0);
-    value_ = value;
-    return *this;
-  }
-  int32_t value() const { return value_; }
-  operator int32_t() const { return value_; }
-
- private:
-  int32_t value_;
-};
-
 template <class T, class U>
 struct is_subtype {
-  static const bool value = std::is_base_of<U, T>::value;
+  static const bool value =
+      std::is_base_of<U, T>::value || (std::is_same<U, MaybeObject>::value &&
+                                       std::is_convertible<T, Object>::value);
 };
 template <class T1, class T2, class U>
 struct is_subtype<UnionT<T1, T2>, U> {
@@ -248,6 +284,10 @@ struct is_subtype<UnionT<T1, T2>, UnionT<U1, U2>> {
   static const bool value =
       (is_subtype<T1, U1>::value || is_subtype<T1, U2>::value) &&
       (is_subtype<T2, U1>::value || is_subtype<T2, U2>::value);
+};
+template <>
+struct is_subtype<ExternalReference, RawPtrT> {
+  static const bool value = true;
 };
 
 template <class T, class U>
@@ -301,19 +341,11 @@ struct types_have_common_values<UnionT<T1, T2>, UnionT<U1, U2>> {
                             types_have_common_values<T2, U2>::value;
 };
 
-template <class T>
-struct types_have_common_values<T, MaybeObject> {
-  static const bool value = types_have_common_values<T, Object>::value;
-};
-
-template <class T>
-struct types_have_common_values<MaybeObject, T> {
-  static const bool value = types_have_common_values<Object, T>::value;
-};
-
 // TNode<T> is an SSA value with the static type tag T, which is one of the
 // following:
-//   - a subclass of internal::Object represents a tagged type
+//   - MaybeObject represents the type of all tagged values, including weak
+//     pointers.
+//   - a subclass of internal::Object represents a non-weak tagged type.
 //   - a subclass of internal::UntaggedT represents an untagged type
 //   - ExternalReference
 //   - PairT<T1, T2> for an operation returning two values, with types T1
@@ -327,6 +359,7 @@ class TNode {
   TNode(const TNode<U>& other) : node_(other) {
     LazyTemplateChecks();
   }
+  TNode(const TNode& other) : node_(other) { LazyTemplateChecks(); }
   TNode() : TNode(nullptr) {}
 
   TNode operator=(TNode other) {
@@ -335,37 +368,18 @@ class TNode {
     return *this;
   }
 
-  bool is_null() { return node_ == nullptr; }
-
   operator compiler::Node*() const { return node_; }
 
   static TNode UncheckedCast(compiler::Node* node) { return TNode(node); }
 
- protected:
-  explicit TNode(compiler::Node* node) : node_(node) { LazyTemplateChecks(); }
-
  private:
+  explicit TNode(compiler::Node* node) : node_(node) { LazyTemplateChecks(); }
   // These checks shouldn't be checked before TNode is actually used.
   void LazyTemplateChecks() {
     static_assert(is_valid_type_tag<T>::value, "invalid type tag");
   }
 
   compiler::Node* node_;
-};
-
-// SloppyTNode<T> is a variant of TNode<T> and allows implicit casts from
-// Node*. It is intended for function arguments as long as some call sites
-// still use untyped Node* arguments.
-// TODO(tebbi): Delete this class once transition is finished.
-template <class T>
-class SloppyTNode : public TNode<T> {
- public:
-  SloppyTNode(compiler::Node* node)  // NOLINT(runtime/explicit)
-      : TNode<T>(node) {}
-  template <class U, typename std::enable_if<is_subtype<U, T>::value,
-                                             int>::type = 0>
-  SloppyTNode(const TNode<U>& other)  // NOLINT(runtime/explicit)
-      : TNode<T>(other) {}
 };
 
 }  // namespace internal

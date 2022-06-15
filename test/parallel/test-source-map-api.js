@@ -1,10 +1,25 @@
 // Flags: --enable-source-maps
 'use strict';
 
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const { findSourceMap, SourceMap } = require('module');
 const { readFileSync } = require('fs');
+
+// It should throw with invalid args.
+{
+  [1, true, 'foo'].forEach((invalidArg) =>
+    assert.throws(
+      () => new SourceMap(invalidArg),
+      {
+        code: 'ERR_INVALID_ARG_TYPE',
+        name: 'TypeError',
+        message: 'The "payload" argument must be of type object.' +
+               common.invalidArgTypeHelper(invalidArg)
+      }
+    )
+  );
+}
 
 // findSourceMap() can lookup source-maps based on URIs, in the
 // non-exceptional case.
@@ -31,7 +46,7 @@ const { readFileSync } = require('fs');
   Error.prepareStackTrace = (error, trace) => {
     const throwingRequireCallSite = trace[0];
     if (throwingRequireCallSite.getFileName().endsWith('typescript-throw.js')) {
-      sourceMap = findSourceMap(throwingRequireCallSite.getFileName(), error);
+      sourceMap = findSourceMap(throwingRequireCallSite.getFileName());
       callSite = throwingRequireCallSite;
     }
   };
@@ -39,6 +54,7 @@ const { readFileSync } = require('fs');
     // Require a file that throws an exception, and has a source map.
     require('../fixtures/source-map/typescript-throw.js');
   } catch (err) {
+    // eslint-disable-next-line no-unused-expressions
     err.stack; // Force prepareStackTrace() to be called.
   }
   assert(callSite);
@@ -123,4 +139,29 @@ const { readFileSync } = require('fs');
     const { originalColumn } = sourceMap.findEntry(0, 0);
     assert.strictEqual(originalColumn, knownDecodings[column]);
   }
+}
+
+// Test that generated columns are sorted when a negative offset is
+// observed, see: https://github.com/mozilla/source-map/pull/92
+{
+  function makeMinimalMap(generatedColumns, originalColumns) {
+    return {
+      sources: ['test.js'],
+      // Mapping from the 0th line, ${g}th column of the output file to the 0th
+      // source file, 0th line, ${column}th column.
+      mappings: generatedColumns.map((g, i) => `${g}AA${originalColumns[i]}`)
+        .join(',')
+    };
+  }
+  // U = 10
+  // F = -2
+  // A = 0
+  // E = 2
+  const sourceMap = new SourceMap(makeMinimalMap(
+    ['U', 'F', 'F'],
+    ['A', 'E', 'E']
+  ));
+  assert.strictEqual(sourceMap.findEntry(0, 6).originalColumn, 4);
+  assert.strictEqual(sourceMap.findEntry(0, 8).originalColumn, 2);
+  assert.strictEqual(sourceMap.findEntry(0, 10).originalColumn, 0);
 }

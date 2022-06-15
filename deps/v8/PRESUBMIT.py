@@ -36,6 +36,9 @@ import os
 import re
 import sys
 
+# This line is 'magic' in that git-cl looks for it to decide whether to
+# use Python3 instead of Python2 when running the code in this file.
+USE_PYTHON3 = True
 
 _EXCLUDED_PATHS = (
     r"^test[\\\/].*",
@@ -62,6 +65,10 @@ _TEST_CODE_EXCLUDED_PATHS = (
     r'src[\\\/]compiler[\\\/]ast-graph-builder\.cc',
     # Test extension.
     r'src[\\\/]extensions[\\\/]gc-extension\.cc',
+    # Runtime functions used for testing.
+    r'src[\\\/]runtime[\\\/]runtime-test\.cc',
+    # Testing helpers.
+    r'src[\\\/]heap[\\\/]cppgc[\\\/]testing\.cc',
 )
 
 
@@ -78,6 +85,7 @@ def _V8PresubmitChecks(input_api, output_api):
   sys.path.append(input_api.os_path.join(
         input_api.PresubmitLocalPath(), 'tools'))
   from v8_presubmit import CppLintProcessor
+  from v8_presubmit import JSLintProcessor
   from v8_presubmit import TorqueLintProcessor
   from v8_presubmit import SourceProcessor
   from v8_presubmit import StatusFilesProcessor
@@ -85,13 +93,18 @@ def _V8PresubmitChecks(input_api, output_api):
   def FilterFile(affected_file):
     return input_api.FilterSourceFile(
       affected_file,
-      white_list=None,
-      black_list=_NO_LINT_PATHS)
+      files_to_check=None,
+      files_to_skip=_NO_LINT_PATHS)
 
   def FilterTorqueFile(affected_file):
     return input_api.FilterSourceFile(
       affected_file,
-      white_list=(r'.+\.tq'))
+      files_to_check=(r'.+\.tq'))
+
+  def FilterJSFile(affected_file):
+    return input_api.FilterSourceFile(
+      affected_file,
+      files_to_check=(r'.+\.m?js'))
 
   results = []
   if not CppLintProcessor().RunOnFiles(
@@ -101,6 +114,10 @@ def _V8PresubmitChecks(input_api, output_api):
       input_api.AffectedFiles(file_filter=FilterTorqueFile,
                               include_deletes=False)):
     results.append(output_api.PresubmitError("Torque format check failed"))
+  if not JSLintProcessor().RunOnFiles(
+      input_api.AffectedFiles(file_filter=FilterJSFile,
+                              include_deletes=False)):
+    results.append(output_api.PresubmitError("JS format check failed"))
   if not SourceProcessor().RunOnFiles(
       input_api.AffectedFiles(include_deletes=False)):
     results.append(output_api.PresubmitError(
@@ -110,7 +127,7 @@ def _V8PresubmitChecks(input_api, output_api):
       input_api.AffectedFiles(include_deletes=True)):
     results.append(output_api.PresubmitError("Status file check failed"))
   results.extend(input_api.canned_checks.CheckAuthorizedAuthor(
-      input_api, output_api, bot_whitelist=[
+      input_api, output_api, bot_allowlist=[
         'v8-ci-autoroll-builder@chops-service-accounts.iam.gserviceaccount.com'
       ]))
   return results
@@ -209,7 +226,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
   warning_descriptions = []
   for path, rule_type, rule_description in deps_checker.CheckAddedCppIncludes(
       added_includes):
-    description_with_path = '%s\n    %s' % (path, rule_description)
+    description_with_path = '{}\n    {}'.format(path, rule_description)
     if rule_type == Rule.DISALLOW:
       error_descriptions.append(description_with_path)
     else:
@@ -234,12 +251,11 @@ def _CheckHeadersHaveIncludeGuards(input_api, output_api):
   file_inclusion_pattern = r'src/.+\.h'
 
   def FilterFile(affected_file):
-    black_list = (_EXCLUDED_PATHS +
-                  input_api.DEFAULT_BLACK_LIST)
+    files_to_skip = _EXCLUDED_PATHS + input_api.DEFAULT_FILES_TO_SKIP
     return input_api.FilterSourceFile(
       affected_file,
-      white_list=(file_inclusion_pattern, ),
-      black_list=black_list)
+      files_to_check=(file_inclusion_pattern, ),
+      files_to_skip=files_to_skip)
 
   leading_src_pattern = input_api.re.compile(r'^src/')
   dash_dot_slash_pattern = input_api.re.compile(r'[-./]')
@@ -266,14 +282,14 @@ def _CheckHeadersHaveIncludeGuards(input_api, output_api):
     for line in f.NewContents():
       for i in range(len(guard_patterns)):
         if guard_patterns[i].match(line):
-            found_patterns[i] = True
+          found_patterns[i] = True
       if skip_check_pattern.match(line):
         file_omitted = True
         break
 
     if not file_omitted and not all(found_patterns):
-      problems.append(
-        '%s: Missing include guard \'%s\'' % (local_path, guard_macro))
+      problems.append('{}: Missing include guard \'{}\''.format(
+          local_path, guard_macro))
 
   if problems:
     return [output_api.PresubmitError(
@@ -285,8 +301,6 @@ def _CheckHeadersHaveIncludeGuards(input_api, output_api):
     return []
 
 
-# TODO(mstarzinger): Similar checking should be made available as part of
-# tools/presubmit.py (note that tools/check-inline-includes.sh exists).
 def _CheckNoInlineHeaderIncludesInNormalHeaders(input_api, output_api):
   """Attempts to prevent inclusion of inline headers into normal header
   files. This tries to establish a layering where inline headers can be
@@ -298,20 +312,19 @@ def _CheckNoInlineHeaderIncludesInNormalHeaders(input_api, output_api):
     'header (e.g. bar.h) file.  This violates layering of dependencies.')
 
   def FilterFile(affected_file):
-    black_list = (_EXCLUDED_PATHS +
-                  input_api.DEFAULT_BLACK_LIST)
+    files_to_skip = _EXCLUDED_PATHS + input_api.DEFAULT_FILES_TO_SKIP
     return input_api.FilterSourceFile(
       affected_file,
-      white_list=(file_inclusion_pattern, ),
-      black_list=black_list)
+      files_to_check=(file_inclusion_pattern, ),
+      files_to_skip=files_to_skip)
 
   problems = []
   for f in input_api.AffectedSourceFiles(FilterFile):
     local_path = f.LocalPath()
     for line_number, line in f.ChangedContents():
       if (include_directive_pattern.search(line)):
-        problems.append(
-          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+        problems.append('{}:{}\n    {}'.format(local_path, line_number,
+                                               line.strip()))
 
   if problems:
     return [output_api.PresubmitError(include_error, problems)]
@@ -331,20 +344,22 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   file_inclusion_pattern = r'.+\.cc'
 
   base_function_pattern = r'[ :]test::[^\s]+|ForTest(ing)?|for_test(ing)?'
-  inclusion_pattern = input_api.re.compile(r'(%s)\s*\(' % base_function_pattern)
-  comment_pattern = input_api.re.compile(r'//.*(%s)' % base_function_pattern)
+  inclusion_pattern = input_api.re.compile(
+      r'({})\s*\('.format(base_function_pattern))
+  comment_pattern = input_api.re.compile(
+      r'//.*({})'.format(base_function_pattern))
   exclusion_pattern = input_api.re.compile(
-    r'::[A-Za-z0-9_]+(%s)|(%s)[^;]+\{' % (
-      base_function_pattern, base_function_pattern))
+      r'::[A-Za-z0-9_]+({})|({})[^;]+'.format(base_function_pattern,
+                                              base_function_pattern) + '\{')
 
   def FilterFile(affected_file):
-    black_list = (_EXCLUDED_PATHS +
-                  _TEST_CODE_EXCLUDED_PATHS +
-                  input_api.DEFAULT_BLACK_LIST)
+    files_to_skip = (_EXCLUDED_PATHS +
+                     _TEST_CODE_EXCLUDED_PATHS +
+                     input_api.DEFAULT_FILES_TO_SKIP)
     return input_api.FilterSourceFile(
       affected_file,
-      white_list=(file_inclusion_pattern, ),
-      black_list=black_list)
+      files_to_check=(file_inclusion_pattern, ),
+      files_to_skip=files_to_skip)
 
   problems = []
   for f in input_api.AffectedSourceFiles(FilterFile):
@@ -353,8 +368,8 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
       if (inclusion_pattern.search(line) and
           not comment_pattern.search(line) and
           not exclusion_pattern.search(line)):
-        problems.append(
-          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+        problems.append('{}:{}\n    {}'.format(local_path, line_number,
+                                               line.strip()))
 
   if problems:
     return [output_api.PresubmitPromptOrNotify(_TEST_ONLY_WARNING, problems)]
@@ -365,7 +380,7 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
 def _CheckGenderNeutralInLicenses(input_api, output_api):
   # License files are taken as is, even if they include gendered pronouns.
   def LicenseFilter(path):
-    input_api.FilterSourceFile(path, black_list=_LICENSE_FILE)
+    input_api.FilterSourceFile(path, files_to_skip=_LICENSE_FILE)
 
   return input_api.canned_checks.CheckGenderNeutral(
     input_api, output_api, source_file_filter=LicenseFilter)
@@ -393,7 +408,6 @@ def _CommonChecks(input_api, output_api):
     _CheckHeadersHaveIncludeGuards,
     _CheckNoInlineHeaderIncludesInNormalHeaders,
     _CheckJSONFiles,
-    _CheckMacroUndefs,
     _CheckNoexceptAnnotations,
     _RunTestsWithVPythonSpec,
   ]
@@ -414,7 +428,7 @@ def _SkipTreeCheck(input_api, output_api):
 def _CheckCommitMessageBugEntry(input_api, output_api):
   """Check that bug entries are well-formed in commit message."""
   bogus_bug_msg = (
-      'Bogus BUG entry: %s. Please specify the issue tracker prefix and the '
+      'Bogus BUG entry: {}. Please specify the issue tracker prefix and the '
       'issue number, separated by a colon, e.g. v8:123 or chromium:12345.')
   results = []
   for bug in (input_api.change.BUG or '').split(','):
@@ -428,12 +442,13 @@ def _CheckCommitMessageBugEntry(input_api, output_api):
           prefix_guess = 'chromium'
         else:
           prefix_guess = 'v8'
-        results.append('BUG entry requires issue tracker prefix, e.g. %s:%s' %
-                       (prefix_guess, bug))
+        results.append(
+            'BUG entry requires issue tracker prefix, e.g. {}:{}'.format(
+                prefix_guess, bug))
       except ValueError:
-        results.append(bogus_bug_msg % bug)
+        results.append(bogus_bug_msg.format(bug))
     elif not re.match(r'\w+:\d+', bug):
-      results.append(bogus_bug_msg % bug)
+      results.append(bogus_bug_msg.format(bug))
   return [output_api.PresubmitError(r) for r in results]
 
 
@@ -441,7 +456,7 @@ def _CheckJSONFiles(input_api, output_api):
   def FilterFile(affected_file):
     return input_api.FilterSourceFile(
         affected_file,
-        white_list=(r'.+\.json',))
+        files_to_check=(r'.+\.json',))
 
   results = []
   for f in input_api.AffectedFiles(
@@ -450,72 +465,10 @@ def _CheckJSONFiles(input_api, output_api):
       try:
         json.load(j)
       except Exception as e:
-        results.append(
-            'JSON validation failed for %s. Error:\n%s' % (f.LocalPath(), e))
+        results.append('JSON validation failed for {}. Error:\n{}'.format(
+            f.LocalPath(), e))
 
   return [output_api.PresubmitError(r) for r in results]
-
-
-def _CheckMacroUndefs(input_api, output_api):
-  """
-  Checks that each #define in a .cc file is eventually followed by an #undef.
-
-  TODO(clemensb): This check should eventually be enabled for all cc files via
-  tools/presubmit.py (https://crbug.com/v8/6811).
-  """
-  def FilterFile(affected_file):
-    # Skip header files, as they often define type lists which are used in
-    # other files.
-    white_list = (r'.+\.cc',r'.+\.cpp',r'.+\.c')
-    return input_api.FilterSourceFile(affected_file, white_list=white_list)
-
-  def Touches(line):
-    return line.startswith('+') or line.startswith('-')
-
-  def InvolvesMacros(text):
-    return define_pattern.match(text) or undef_pattern.match(text)
-
-  def TouchesMacros(f):
-    return any(Touches(line) and InvolvesMacros(line[1:])
-               for line in f.GenerateScmDiff().splitlines())
-
-  def CollectUndefsWithNoDef(defined_macros, errors, f, line, line_nr):
-    define_match = define_pattern.match(line)
-    if define_match:
-      name = define_match.group(1)
-      defined_macros[name] = line_nr
-    undef_match = undef_pattern.match(line)
-    if undef_match and not "// NOLINT" in line:
-      name = undef_match.group(1)
-      if name in defined_macros:
-        del defined_macros[name]
-      else:
-        errors.append('{}:{}: Macro named \'{}\' was not defined before.'
-                      .format(f.LocalPath(), line_nr, name))
-
-  define_pattern = input_api.re.compile(r'#define (\w+)')
-  undef_pattern = input_api.re.compile(r'#undef (\w+)')
-  errors = []
-  for f in input_api.AffectedFiles(
-      file_filter=FilterFile, include_deletes=False):
-    if not TouchesMacros(f):
-      continue
-
-    defined_macros = dict()
-    with open(f.LocalPath()) as fh:
-      for line_nr, line in enumerate(fh, start=1):
-        CollectUndefsWithNoDef(defined_macros, errors, f, line, line_nr)
-
-    for name, line_nr in sorted(defined_macros.items(), key=lambda e: e[1]):
-      errors.append('{}:{}: Macro missing #undef: {}'
-                    .format(f.LocalPath(), line_nr, name))
-
-  if errors:
-    return [output_api.PresubmitPromptOrNotify(
-        'Detected mismatches in #define / #undef in the file(s) where you '
-        'modified preprocessor macros.',
-        errors)]
-  return []
 
 
 def _CheckNoexceptAnnotations(input_api, output_api):
@@ -535,8 +488,12 @@ def _CheckNoexceptAnnotations(input_api, output_api):
   def FilterFile(affected_file):
     return input_api.FilterSourceFile(
         affected_file,
-        white_list=(r'src/.*', r'test/.*'))
-
+        files_to_check=(r'src[\\\/].*', r'test[\\\/].*'),
+        # Skip api.cc since we cannot easily add the 'noexcept' annotation to
+        # public methods.
+        # Skip src/bigint/ because it's meant to be V8-independent.
+        files_to_skip=(r'src[\\\/]api[\\\/]api\.cc',
+                       r'src[\\\/]bigint[\\\/].*'))
 
   # matches any class name.
   class_name = r'\b([A-Z][A-Za-z0-9_:]*)(?:::\1)?'
@@ -558,8 +515,7 @@ def _CheckNoexceptAnnotations(input_api, output_api):
                                    include_deletes=False):
     with open(f.LocalPath()) as fh:
       for match in re.finditer(regexp, fh.read()):
-        errors.append('in {}: {}'.format(f.LocalPath(),
-                                         match.group().strip()))
+        errors.append(f'in {f.LocalPath()}: {match.group().strip()}')
 
   if errors:
     return [output_api.PresubmitPromptOrNotify(

@@ -49,7 +49,7 @@ const TMPL = (tail) => `${NOW} - ${tail}`;
 const interfaceAddress = ((networkInterfaces) => {
   for (const name in networkInterfaces) {
     for (const localInterface of networkInterfaces[name]) {
-      if (!localInterface.internal && localInterface.family === FAM) {
+      if (!localInterface.internal && `IPv${localInterface.family}` === FAM) {
         let interfaceAddress = localInterface.address;
         // On Windows, IPv6 would need: `%${localInterface.scopeid}`
         if (FAM === 'IPv6')
@@ -70,7 +70,7 @@ const messages = [
   { tail: 'Fourth message to send', mcast: MULTICASTS[FAM][2] },
   { tail: 'Fifth message to send', mcast: MULTICASTS[FAM][1], rcv: true },
   { tail: 'Sixth message to send', mcast: MULTICASTS[FAM][2], rcv: true,
-    newAddr: LOOPBACK[FAM] }
+    newAddr: LOOPBACK[FAM] },
 ];
 
 
